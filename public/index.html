@@ -53,7 +53,14 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
-                <button id="syncBtn" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm font-semibold">同步历史</button>
+                <div class="relative inline-block">
+                    <button id="syncBtn" class="px-4 py-2 bg-blue-500 text-white rounded-l hover:bg-blue-600 transition-colors text-sm font-semibold">同步历史</button><button id="syncDropdownBtn" class="px-2 py-2 bg-blue-500 text-white rounded-r hover:bg-blue-600 transition-colors text-sm font-semibold border-l border-blue-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                    <div id="syncDropdown" class="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border hidden z-50">
+                        <button class="sync-option w-full px-4 py-2 text-left text-sm hover:bg-gray-100 rounded-t-lg" data-platform="">全部平台</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -393,6 +400,34 @@
                 option.textContent = config.name;
                 select.appendChild(option);
             });
+
+            // 同时更新同步下拉菜单
+            updateSyncDropdown();
+        }
+
+        /**
+         * 更新同步按钮下拉菜单
+         */
+        function updateSyncDropdown() {
+            const dropdown = document.getElementById('syncDropdown');
+            dropdown.innerHTML = '<button class="sync-option w-full px-4 py-2 text-left text-sm hover:bg-gray-100 rounded-t-lg" data-platform="">全部平台</button>';
+            enabledPlatforms.forEach((platform, index) => {
+                const config = PLATFORM_CONFIG[platform] || { name: platform };
+                const isLast = index === enabledPlatforms.length - 1;
+                const btn = document.createElement('button');
+                btn.className = `sync-option w-full px-4 py-2 text-left text-sm hover:bg-gray-100 ${isLast ? 'rounded-b-lg' : ''}`;
+                btn.dataset.platform = platform;
+                btn.textContent = config.name;
+                dropdown.appendChild(btn);
+            });
+
+            // 绑定点击事件
+            dropdown.querySelectorAll('.sync-option').forEach(btn => {
+                btn.onclick = () => {
+                    dropdown.classList.add('hidden');
+                    syncHistory(btn.dataset.platform || null);
+                };
+            });
         }
 
         // 页面初始化
@@ -464,12 +499,19 @@
         }
 
         // 同步历史记录
-        async function syncHistory() {
+        async function syncHistory(platform = null) {
             const syncBtn = document.getElementById('syncBtn');
+            const syncDropdownBtn = document.getElementById('syncDropdownBtn');
             syncBtn.disabled = true;
+            syncDropdownBtn.disabled = true;
             syncBtn.textContent = '同步中...';
             try {
-                const response = await authFetch('/api/history/sync', { method: 'POST' });
+                const body = platform ? { platform } : {};
+                const response = await authFetch('/api/history/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
                 const data = await response.json();
                 alert(data.message);
                 loadHistory(true);
@@ -478,6 +520,7 @@
                 alert('同步失败: ' + error.message);
             } finally {
                 syncBtn.disabled = false;
+                syncDropdownBtn.disabled = false;
                 syncBtn.textContent = '同步历史';
             }
         }
@@ -576,7 +619,19 @@
             currentPlatform = e.target.value;
             loadHistory(true);
         });
-        document.getElementById('syncBtn').addEventListener('click', syncHistory);
+        // 同步按钮：点击主按钮同步全部
+        document.getElementById('syncBtn').addEventListener('click', () => syncHistory());
+        // 同步下拉按钮：显示/隐藏菜单
+        const syncDropdown = document.getElementById('syncDropdown');
+        const syncDropdownBtn = document.getElementById('syncDropdownBtn');
+        syncDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            syncDropdown.classList.toggle('hidden');
+        });
+        // 点击其他地方关闭下拉菜单
+        document.addEventListener('click', () => {
+            syncDropdown.classList.add('hidden');
+        });
 
         // 日期按钮事件
         const dateInput = document.getElementById('dateInput');
