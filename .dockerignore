@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# Docker
+docker/
+Dockerfile
+.dockerignore
+
+# Data and config
+data/
+config.json
+*.db
+
+# Development
+node_modules/
+npm-debug.log*
+.npm
+
+# Documentation
+README.md
+CLAUDE.md
+LICENSE
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

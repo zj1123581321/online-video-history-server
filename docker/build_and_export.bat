@@ -2,11 +2,11 @@
 chcp 65001 >nul
 REM ============================================
 REM Docker Image Build and Export Script (Windows)
-REM For: Fordeal IM Parser
+REM For: Bilibili History Server
 REM ============================================
 
 echo ======================================
-echo   FD IM Parser - Image Build
+echo   Bilibili History Server - Image Build
 echo ======================================
 echo.
 
@@ -20,7 +20,7 @@ if errorlevel 1 (
 )
 
 REM Set image name
-set IMAGE_NAME=fd-im-parser
+set IMAGE_NAME=bilibili-history-server
 
 REM Get current datetime (format: YYYYMMDD-HHMMSS)
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
@@ -31,8 +31,8 @@ set IMAGE_TAG=%IMAGE_NAME%:%TIMESTAMP%
 set IMAGE_LATEST=%IMAGE_NAME%:latest
 
 REM Set output file names
-set OUTPUT_DIR=%~dp0output
-set TAR_FILE=%OUTPUT_DIR%\fd-im-parser-%TIMESTAMP%.tar
+set OUTPUT_DIR=%~dp0export
+set TAR_FILE=%OUTPUT_DIR%\bilibili-history-server-%TIMESTAMP%.tar
 set IMPORT_SCRIPT=%OUTPUT_DIR%\import_image.sh
 
 echo [1/5] Preparing output directory...
@@ -41,7 +41,7 @@ echo Output directory: %OUTPUT_DIR%
 echo.
 
 REM Switch to project root directory
-cd /d "%~dp0..\.."
+cd /d "%~dp0.."
 
 echo [2/5] Building Docker image...
 echo Image tag: %IMAGE_TAG%
@@ -81,7 +81,7 @@ if not exist "%TEMPLATE_FILE%" (
 )
 
 REM Use PowerShell to replace placeholders in template (using Unix LF line endings)
-powershell -Command "$content = Get-Content '%TEMPLATE_FILE%' -Raw; $content = $content -replace '__IMAGE_NAME__', '%IMAGE_NAME%'; $content = $content -replace '__IMAGE_TAG__', '%IMAGE_TAG%'; $content = $content -replace '__TIMESTAMP__', '%TIMESTAMP%'; $content = $content -replace '__TAR_FILE__', 'fd-im-parser-%TIMESTAMP%.tar'; $content = $content -replace \"`r`n\", \"`n\"; [System.IO.File]::WriteAllText('%IMPORT_SCRIPT%', $content, [System.Text.UTF8Encoding]::new($false))"
+powershell -Command "$content = Get-Content '%TEMPLATE_FILE%' -Raw; $content = $content -replace '__IMAGE_NAME__', '%IMAGE_NAME%'; $content = $content -replace '__IMAGE_TAG__', '%IMAGE_TAG%'; $content = $content -replace '__TIMESTAMP__', '%TIMESTAMP%'; $content = $content -replace '__TAR_FILE__', 'bilibili-history-server-%TIMESTAMP%.tar'; $content = $content -replace \"`r`n\", \"`n\"; [System.IO.File]::WriteAllText('%IMPORT_SCRIPT%', $content, [System.Text.UTF8Encoding]::new($false))"
 
 if errorlevel 1 (
     echo [ERROR] Failed to generate import script!
@@ -93,8 +93,8 @@ echo.
 
 echo [5/5] Copying configuration files...
 copy /Y "%~dp0docker-compose.deploy.yml" "%OUTPUT_DIR%\docker-compose.yml" >nul
-copy /Y "%~dp0..\..\config.yaml.example" "%OUTPUT_DIR%\config.yaml.example" >nul
-echo Copied docker-compose.yml and config.yaml.example
+copy /Y "%~dp0..\config-example.json" "%OUTPUT_DIR%\config-example.json" >nul
+echo Copied docker-compose.yml and config-example.json
 echo.
 
 echo ======================================
@@ -111,22 +111,22 @@ echo ======================================
 echo   Next Steps
 echo ======================================
 echo.
-echo 1. Upload the following files from output folder to Linux server:
-echo    - fd-im-parser-%TIMESTAMP%.tar  (image archive)
-echo    - import_image.sh               (import script)
-echo    - docker-compose.yml            (compose config)
-echo    - config.yaml.example           (config template)
+echo 1. Upload the following files from export folder to Linux server:
+echo    - bilibili-history-server-%TIMESTAMP%.tar  (image archive)
+echo    - import_image.sh                          (import script)
+echo    - docker-compose.yml                       (compose config)
+echo    - config-example.json                      (config template)
 echo.
 echo 2. On Linux server, run:
 echo    chmod +x import_image.sh
 echo    ./import_image.sh
 echo.
 echo 3. Configure the application:
-echo    cp config.yaml.example config.yaml
-echo    vim config.yaml  # Fill in actual configuration
+echo    cp config-example.json config.json
+echo    vim config.json  # Fill in actual configuration
 echo.
-echo 4. Create data directories and start service:
-echo    mkdir -p data logs
+echo 4. Create data directory and start service:
+echo    mkdir -p data
 echo    docker compose up -d
 echo.
 pause

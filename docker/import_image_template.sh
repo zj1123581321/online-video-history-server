@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ============================================
 # Docker Image Import Script (Linux)
-# For: Fordeal IM Parser
+# For: Bilibili History Server
 # ============================================
 
 set -e
 set -o pipefail
 
 echo "======================================"
-echo "  FD IM Parser - Image Import"
+echo "  Bilibili History Server - Image Import"
 echo "======================================"
 echo ""
 
@@ -77,11 +77,11 @@ echo ""
 echo "Next steps:"
 echo ""
 echo "1. Configure the application:"
-echo "   cp config.yaml.example config.yaml"
-echo "   vim config.yaml  # Fill in your actual configuration"
+echo "   cp config-example.json config.json"
+echo "   vim config.json  # Fill in your actual configuration"
 echo ""
-echo "2. Create data directories:"
-echo "   mkdir -p data logs"
+echo "2. Create data directory:"
+echo "   mkdir -p data"
 echo ""
 echo "3. Start service with docker compose:"
 echo "   docker compose up -d"
@@ -90,6 +90,6 @@ echo "4. Check service status:"
 echo "   docker compose ps"
 echo "   docker compose logs -f"
 echo ""
-echo "5. Manual trigger (optional):"
-echo "   docker compose exec im-parser /app/.venv/bin/python scripts/fetch_last_7_days.py"
+echo "5. Access the web interface:"
+echo "   http://your-server-ip:3000"
 echo ""

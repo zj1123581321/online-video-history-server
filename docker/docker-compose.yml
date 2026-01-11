@@ -1,0 +1,27 @@
+# ============================================
+# Docker Compose for Bilibili History Server
+# Local development/testing configuration
+# ============================================
+
+services:
+  bilibili-history:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: bilibili-history-server:latest
+    container_name: bilibili-history
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Data persistence
+      - type: bind
+        source: ../data
+        target: /app/data
+      # Configuration file
+      - type: bind
+        source: ../config.json
+        target: /app/config.json
+        read_only: true
+    environment:
+      - NODE_ENV=production

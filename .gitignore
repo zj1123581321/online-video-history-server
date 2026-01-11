@@ -32,6 +32,7 @@ node_modules/
 # 构建输出目录
 dist/
 build/
+docker/export/
 
 # 其他临时文件
 *.swp

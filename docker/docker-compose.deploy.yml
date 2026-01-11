@@ -1,0 +1,25 @@
+# ============================================
+# Docker Compose for Bilibili History Server
+# Deployment configuration
+# ============================================
+
+services:
+  bilibili-history:
+    image: bilibili-history-server:latest
+    container_name: bilibili-history
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Data persistence
+      - ./data:/app/data
+      # Configuration file
+      - ./config.json:/app/config.json:ro
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
