@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { syncHistory } from './services/history.js';
 import fetch from 'node-fetch';
 import { setInterval as setNodeInterval, clearInterval as clearNodeInterval } from 'timers';
+import db, { initDatabase } from './db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,21 +14,22 @@ const __dirname = dirname(__filename);
 const app = express();
 const config = JSON.parse(readFileSync(join(__dirname, '../config.json'), 'utf-8'));
 
+// 初始化数据库
+initDatabase();
+
 // 中间件
 app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, '../public')));
 
-// 数据文件路径
-const HISTORY_FILE = join(__dirname, '../data/history.json');
+// 预编译查询语句
+const stmts = {
+  getById: db.prepare('SELECT * FROM history WHERE id = ?'),
+  deleteById: db.prepare('DELETE FROM history WHERE id = ?'),
+  count: db.prepare('SELECT COUNT(*) as total FROM history'),
+};
 
-// 确保数据文件存在
-try {
-  readFileSync(HISTORY_FILE, 'utf-8');
-} catch {
-  writeFileSync(HISTORY_FILE, JSON.stringify([]));
-}
-
+// 自动同步定时器
 let syncTimer = null;
 function startAutoSync() {
   if (syncTimer) clearNodeInterval(syncTimer);
@@ -44,31 +46,73 @@ function startAutoSync() {
 }
 startAutoSync();
 
+/**
+ * 构建查询历史记录的 SQL
+ * @param {object} params 查询参数
+ * @returns {{sql: string, params: any[]}}
+ */
+function buildHistoryQuery(params) {
+  const { keyword = '', authorKeyword = '', date = '' } = params;
+
+  let sql = 'SELECT * FROM history WHERE 1=1';
+  const sqlParams = [];
+
+  if (keyword) {
+    sql += ' AND title LIKE ?';
+    sqlParams.push(`%${keyword}%`);
+  }
+
+  if (authorKeyword) {
+    sql += ' AND author_name LIKE ?';
+    sqlParams.push(`%${authorKeyword}%`);
+  }
+
+  if (date) {
+    // 将日期转换为时间戳范围
+    const dayStart = new Date(date + 'T00:00:00').getTime() / 1000;
+    const dayEnd = new Date(date + 'T23:59:59').getTime() / 1000;
+    sql += ' AND view_time >= ? AND view_time <= ?';
+    sqlParams.push(dayStart, dayEnd);
+  }
+
+  sql += ' ORDER BY view_time DESC';
+
+  return { sql, params: sqlParams };
+}
+
 // 获取历史记录
 app.get('/api/history', (req, res) => {
   try {
     const { keyword = '', authorKeyword = '', date = '', page = 1, pageSize = 20 } = req.query;
-    const history = JSON.parse(readFileSync(HISTORY_FILE, 'utf-8'));
-    
-    // 过滤数据
-    let filtered = history.filter(item => {
-      const matchKeyword = !keyword || item.title.toLowerCase().includes(keyword.toLowerCase());
-      const matchAuthor = !authorKeyword || item.author_name.toLowerCase().includes(authorKeyword.toLowerCase());
-      const matchDate = !date || new Date(item.viewTime * 1000).toISOString().split('T')[0] === date;
-      return matchKeyword && matchAuthor && matchDate;
-    });
+    const pageNum = parseInt(page, 10);
+    const pageSizeNum = parseInt(pageSize, 10);
+    const offset = (pageNum - 1) * pageSizeNum;
 
-    // 分页
-    const start = (page - 1) * pageSize;
-    const end = start + pageSize;
-    const paginated = filtered.slice(start, end);
+    // 构建查询
+    const { sql, params } = buildHistoryQuery({ keyword, authorKeyword, date });
+
+    // 查询总数
+    const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total').replace(' ORDER BY view_time DESC', '');
+    const countResult = db.prepare(countSql).get(...params);
+    const total = countResult.total;
+
+    // 分页查询
+    const pagedSql = sql + ' LIMIT ? OFFSET ?';
+    const items = db.prepare(pagedSql).all(...params, pageSizeNum, offset);
+
+    // 转换字段名以保持 API 兼容性
+    const formattedItems = items.map(item => ({
+      ...item,
+      viewTime: item.view_time,
+    }));
 
     res.json({
-      items: paginated,
-      total: filtered.length,
-      hasMore: end < filtered.length
+      items: formattedItems,
+      total,
+      hasMore: offset + items.length < total
     });
   } catch (error) {
+    console.error('查询历史记录失败:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -77,9 +121,9 @@ app.get('/api/history', (req, res) => {
 app.post('/api/history/sync', async (req, res) => {
   try {
     const result = await syncHistory();
-    res.json({ 
-      success: true, 
-      message: `同步成功，新增 ${result.newCount} 条记录，更新 ${result.updateCount} 条记录` 
+    res.json({
+      success: true,
+      message: `同步成功，新增 ${result.newCount} 条记录，更新 ${result.updateCount} 条记录`
     });
   } catch (error) {
     console.error('同步历史记录失败:', error);
@@ -91,22 +135,21 @@ app.post('/api/history/sync', async (req, res) => {
 app.delete('/api/history/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const history = JSON.parse(readFileSync(HISTORY_FILE, 'utf-8'));
-    const item = history.find(item => String(item.id) === String(id));
-    
+    const item = stmts.getById.get(id);
+
     if (!item) {
       return res.status(404).json({ success: false, error: '记录不存在' });
     }
 
-    // 从cookie中提取bili_jct
+    // 从 cookie 中提取 bili_jct
     const cookieStr = config.bilibili.cookie;
     const biliJctMatch = cookieStr.match(/bili_jct=([^;]+)/);
     if (!biliJctMatch) {
-      throw new Error('未找到bili_jct，请检查cookie配置');
+      throw new Error('未找到 bili_jct，请检查 cookie 配置');
     }
     const biliJct = biliJctMatch[1];
 
-    // 调用B站API删除远程内容
+    // 调用 B站 API 删除远程内容
     const kid = `${item.business}_${id}`;
     const response = await fetch('https://api.bilibili.com/x/v2/history/delete', {
       method: 'POST',
@@ -128,9 +171,8 @@ app.delete('/api/history/:id', async (req, res) => {
     }
 
     // 删除本地记录
-    const filtered = history.filter(item => String(item.id) !== String(id));
-    writeFileSync(HISTORY_FILE, JSON.stringify(filtered, null, 2));
-    
+    stmts.deleteById.run(id);
+
     res.json({ success: true, message: '删除成功' });
   } catch (error) {
     console.error('删除失败:', error);
@@ -161,21 +203,21 @@ app.get('/img-proxy', async (req, res) => {
   }
 });
 
-// 设置自动同步间隔API
+// 设置自动同步间隔 API
 app.post('/api/set-sync-interval', express.json(), (req, res) => {
   const { interval } = req.body;
   if (!interval || typeof interval !== 'number' || interval < 60000) {
     return res.status(400).json({ error: '无效的同步间隔，最小1分钟' });
   }
   config.server.syncInterval = interval;
-  // 更新config.json
+  // 更新 config.json
   const configPath = join(__dirname, '../config.json');
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   startAutoSync();
   res.json({ message: '同步间隔已更新', interval });
 });
 
-// 获取当前同步间隔API
+// 获取当前同步间隔 API
 app.get('/api/get-sync-interval', (req, res) => {
   res.json({ interval: config.server.syncInterval || 3600000 });
 });
@@ -183,4 +225,4 @@ app.get('/api/get-sync-interval', (req, res) => {
 // 启动服务器
 app.listen(config.server.port, () => {
   console.log(`服务器运行在 http://localhost:${config.server.port}`);
-}); 
+});

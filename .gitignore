@@ -3,6 +3,10 @@ config.json
 
 # 敏感数据文件
 data/history.json
+data/history.json.bak
+data/*.db
+data/*.db-wal
+data/*.db-shm
 
 # 依赖目录
 node_modules/
@@ -31,6 +35,7 @@ build/
 # 其他临时文件
 *.swp
 *.swo
+CLAUDE.md
 
 # 依赖锁定文件
 package-lock.json 

@@ -1,18 +1,31 @@
 import fetch from 'node-fetch';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import dayjs from 'dayjs';
+import db from '../db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const config = JSON.parse(readFileSync(join(__dirname, '../../config.json'), 'utf-8'));
-const HISTORY_FILE = join(__dirname, '../../data/history.json');
 
+// 预编译 SQL 语句提升性能
+const stmts = {
+  getById: db.prepare('SELECT id, view_time FROM history WHERE id = ?'),
+  insert: db.prepare(`
+    INSERT INTO history
+    (id, business, bvid, cid, title, tag_name, cover, view_time, uri, author_name, author_mid, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  updateViewTime: db.prepare('UPDATE history SET view_time = ?, timestamp = ? WHERE id = ?'),
+};
+
+/**
+ * 从 B站 同步历史记录到本地数据库
+ * @returns {Promise<{success: boolean, newCount: number, updateCount: number, message: string}>}
+ */
 export async function syncHistory() {
   try {
-    const existingHistory = JSON.parse(readFileSync(HISTORY_FILE, 'utf-8'));
     let hasMore = true;
     let max = 0;
     let view_at = 0;
@@ -21,6 +34,36 @@ export async function syncHistory() {
     let newCount = 0;
     let updateCount = 0;
     let processedIds = new Set();
+
+    // 使用事务批量处理
+    const batchInsert = db.transaction((items) => {
+      for (const item of items) {
+        const existing = stmts.getById.get(item.id);
+
+        if (!existing) {
+          // 新记录
+          stmts.insert.run(
+            item.id,
+            item.business,
+            item.bvid,
+            item.cid,
+            item.title,
+            item.tag_name,
+            item.cover,
+            item.viewTime,
+            item.uri,
+            item.author_name,
+            item.author_mid,
+            item.timestamp
+          );
+          newCount++;
+        } else if (existing.view_time !== item.viewTime) {
+          // 更新观看时间
+          stmts.updateViewTime.run(item.viewTime, item.timestamp, item.id);
+          updateCount++;
+        }
+      }
+    });
 
     while (hasMore) {
       const response = await fetch(
@@ -47,50 +90,41 @@ export async function syncHistory() {
       view_at = data.data.cursor.view_at;
 
       if (data.data.list.length > 0) {
-        let hasNewOrUpdated = false;
+        const prevNewCount = newCount;
+        const prevUpdateCount = updateCount;
 
-        // 处理新的历史记录
+        // 转换数据格式
+        const items = [];
         for (const item of data.data.list) {
-          const historyItem = {
+          // 检查是否已经处理过这个 ID
+          if (processedIds.has(item.history.oid)) {
+            continue;
+          }
+          processedIds.add(item.history.oid);
+
+          items.push({
             id: item.history.oid,
             business: item.history.business,
             bvid: item.history.bvid,
             cid: item.history.cid,
             title: item.title,
             tag_name: item.tag_name,
-            cover: item.cover || (item.covers && item.covers[0]),
+            cover: item.cover || (item.covers && item.covers[0]) || '',
             viewTime: item.view_at,
-            uri: item.uri,
+            uri: item.uri || '',
             author_name: item.author_name || '',
-            author_mid: item.author_mid || '',
+            author_mid: item.author_mid || 0,
             timestamp: Date.now(),
-          };
-
-          // 检查是否已经处理过这个ID
-          if (processedIds.has(historyItem.id)) {
-            continue;
-          }
-          processedIds.add(historyItem.id);
-
-          const existingIndex = existingHistory.findIndex(h => h.id === historyItem.id);
-          if (existingIndex === -1) {
-            // 新记录
-            existingHistory.unshift(historyItem);
-            newCount++;
-            hasNewOrUpdated = true;
-          } else {
-            // 更新已存在记录的viewTime
-            if (existingHistory[existingIndex].viewTime !== historyItem.viewTime) {
-              existingHistory[existingIndex].viewTime = historyItem.viewTime;
-              updateCount++;
-              hasNewOrUpdated = true;
-            }
-          }
+          });
         }
 
-        console.log(`同步了${data.data.list.length}条历史记录`);
+        // 批量插入/更新
+        batchInsert(items);
+
+        console.log(`同步了 ${data.data.list.length} 条历史记录`);
 
         // 如果这一批数据中没有任何新增或更新，且已经处理了足够多的记录，就退出循环
+        const hasNewOrUpdated = newCount > prevNewCount || updateCount > prevUpdateCount;
         if (!hasNewOrUpdated && processedIds.size >= 100) {
           console.log('没有新的更新，同步结束');
           break;
@@ -100,12 +134,6 @@ export async function syncHistory() {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
-
-    // 按观看时间排序
-    existingHistory.sort((a, b) => b.viewTime - a.viewTime);
-
-    // 保存到文件
-    writeFileSync(HISTORY_FILE, JSON.stringify(existingHistory, null, 2));
 
     return {
       success: true,
@@ -117,4 +145,4 @@ export async function syncHistory() {
     console.error('同步历史记录失败:', error);
     throw error;
   }
-} 
+}
