@@ -8,6 +8,10 @@
 
 本项目参考了 [bilibili-history-wxt](https://github.com/mundane799699/bilibili-history-wxt) 项目的部分实现。
 
+## 文档
+
+- [客户端接入指南](docs/API_CLIENT.md) - API 接口文档和多语言客户端示例
+
 ## 功能特点
 
 - **多平台支持**：可扩展的 Provider 架构，支持多个视频平台
