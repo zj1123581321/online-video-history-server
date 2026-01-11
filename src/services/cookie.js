@@ -9,6 +9,7 @@
 
 import { CookieCloudClient } from '../utils/cookiecloud.js';
 import { CookieCache } from '../utils/cookieCache.js';
+import { writeCookieNetscapeFile, removeCookieFile } from '../utils/cookieNetscape.js';
 
 // 平台域名映射（默认值）
 const DEFAULT_DOMAINS = {
@@ -163,6 +164,34 @@ export class CookieService {
     }
 
     throw new Error(`${platform}: 未知平台，请在配置中指定域名`);
+  }
+
+  /**
+   * 获取 Netscape 格式的 cookie 文件路径
+   * 用于 yt-dlp 等需要 cookie 文件的工具
+   * @param {string} platform - 平台名称
+   * @param {string} [filePath] - 可选，指定输出文件路径
+   * @returns {Promise<string>} cookie 文件路径
+   */
+  async getCookieNetscapeFile(platform, filePath = null) {
+    // YouTube 必须使用 CookieCloud
+    if (platform === 'youtube' && !this.isCookieCloudEnabled()) {
+      throw new Error('YouTube: 必须启用 CookieCloud 才能同步历史记录');
+    }
+
+    const cookie = await this.getCookie(platform);
+    const domain = this._getDomain(platform);
+    const outputPath = filePath || `./data/tmp_${platform}_cookie.txt`;
+
+    return writeCookieNetscapeFile(cookie, outputPath, domain);
+  }
+
+  /**
+   * 删除临时 cookie 文件
+   * @param {string} filePath - 文件路径
+   */
+  removeCookieFile(filePath) {
+    removeCookieFile(filePath);
   }
 }
 

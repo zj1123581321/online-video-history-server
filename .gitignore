@@ -8,6 +8,8 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/cookie_cache.json
+data/youtube_sync_state.json
+data/tmp_*_cookie.txt
 
 # 依赖目录
 node_modules/
@@ -33,6 +35,8 @@ node_modules/
 dist/
 build/
 docker/export/
+docs/ytdlp
+cookies.txt
 
 # 其他临时文件
 *.swp

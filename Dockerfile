@@ -23,6 +23,11 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install yt-dlp for YouTube history sync
+RUN apk add --no-cache python3 py3-pip && \
+    pip3 install --break-system-packages yt-dlp && \
+    rm -rf /root/.cache
+
 # Copy only the compiled node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
 

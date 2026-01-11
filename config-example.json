@@ -1,7 +1,8 @@
 {
   "server": {
     "port": 3000,
-    "syncInterval": 3600000
+    "syncInterval": 3600000,
+    "timezone": 8
   },
   "auth": {
     "password": "",
@@ -12,6 +13,11 @@
     "bilibili": {
       "enabled": true,
       "cookie": "SESSDATA=your_sessdata_here; bili_jct=your_bili_jct_here"
+    },
+    "youtube": {
+      "enabled": false,
+      "syncInterval": 43200000,
+      "firstSyncCount": 100
     }
   },
   "cookiecloud": {
@@ -22,6 +28,9 @@
     "platforms": {
       "bilibili": {
         "domain": ".bilibili.com"
+      },
+      "youtube": {
+        "domain": ".youtube.com"
       }
     }
   }

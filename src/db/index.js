@@ -19,10 +19,25 @@ db.pragma('journal_mode = WAL');
  * 初始化数据库表结构和索引
  */
 function initSchema() {
+  // 检查是否需要迁移（id 从 INTEGER 改为 TEXT）
+  const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='history'").get();
+
+  if (tableExists) {
+    const columns = db.prepare("PRAGMA table_info(history)").all();
+    const idCol = columns.find(col => col.name === 'id');
+
+    // 如果 id 是 INTEGER 类型，需要迁移
+    if (idCol && idCol.type === 'INTEGER') {
+      console.log('[DB] 检测到旧表结构（id 为 INTEGER），开始迁移...');
+      migrateIdToText();
+    }
+  }
+
+  // 创建新表结构（如果不存在）
   db.exec(`
     CREATE TABLE IF NOT EXISTS history (
-      id INTEGER PRIMARY KEY,
-      platform TEXT DEFAULT 'bilibili',
+      id TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'bilibili',
       business TEXT,
       bvid TEXT,
       cid INTEGER,
@@ -33,7 +48,8 @@ function initSchema() {
       uri TEXT,
       author_name TEXT,
       author_mid INTEGER,
-      timestamp INTEGER
+      timestamp INTEGER,
+      PRIMARY KEY (id, platform)
     );
 
     CREATE INDEX IF NOT EXISTS idx_view_time ON history(view_time DESC);
@@ -41,17 +57,53 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_title ON history(title);
     CREATE INDEX IF NOT EXISTS idx_author ON history(author_name);
   `);
+}
 
-  // 检查并添加 platform 字段（兼容旧数据库）
-  const columns = db.prepare("PRAGMA table_info(history)").all();
-  const hasPlatform = columns.some(col => col.name === 'platform');
-  if (!hasPlatform) {
-    console.log('检测到旧数据库结构，添加 platform 字段...');
-    db.exec(`ALTER TABLE history ADD COLUMN platform TEXT DEFAULT 'bilibili'`);
-    db.exec(`UPDATE history SET platform = 'bilibili' WHERE platform IS NULL`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_platform ON history(platform)`);
-    console.log('数据库结构升级完成');
-  }
+/**
+ * 迁移数据库：将 id 从 INTEGER 改为 TEXT
+ */
+function migrateIdToText() {
+  db.exec(`
+    -- 重命名旧表
+    ALTER TABLE history RENAME TO history_old;
+
+    -- 创建新表
+    CREATE TABLE history (
+      id TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'bilibili',
+      business TEXT,
+      bvid TEXT,
+      cid INTEGER,
+      title TEXT,
+      tag_name TEXT,
+      cover TEXT,
+      view_time INTEGER,
+      uri TEXT,
+      author_name TEXT,
+      author_mid INTEGER,
+      timestamp INTEGER,
+      PRIMARY KEY (id, platform)
+    );
+
+    -- 复制数据，将 id 转为 TEXT
+    INSERT INTO history SELECT
+      CAST(id AS TEXT),
+      COALESCE(platform, 'bilibili'),
+      business, bvid, cid, title, tag_name, cover,
+      view_time, uri, author_name, author_mid, timestamp
+    FROM history_old;
+
+    -- 删除旧表
+    DROP TABLE history_old;
+
+    -- 重建索引
+    CREATE INDEX IF NOT EXISTS idx_view_time ON history(view_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_platform ON history(platform);
+    CREATE INDEX IF NOT EXISTS idx_title ON history(title);
+    CREATE INDEX IF NOT EXISTS idx_author ON history(author_name);
+  `);
+
+  console.log('[DB] 表结构迁移完成：id 已从 INTEGER 改为 TEXT');
 }
 
 /**

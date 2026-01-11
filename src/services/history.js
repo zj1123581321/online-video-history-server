@@ -1,9 +1,10 @@
 import { BilibiliProvider } from '../providers/bilibili.js';
+import { YouTubeProvider } from '../providers/youtube.js';
 
 // Provider 注册表
 const providerRegistry = {
   bilibili: BilibiliProvider,
-  // youtube: YouTubeProvider,  // 未来扩展
+  youtube: YouTubeProvider,
 };
 
 // 已初始化的 Provider 实例

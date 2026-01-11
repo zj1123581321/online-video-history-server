@@ -47,22 +47,131 @@ const stmts = {
   deleteById: db.prepare('DELETE FROM history WHERE id = ?'),
 };
 
-// 自动同步定时器
-let syncTimer = null;
-function startAutoSync() {
-  if (syncTimer) clearNodeInterval(syncTimer);
+// Bilibili 自动同步定时器
+let bilibiliSyncTimer = null;
+function startBilibiliAutoSync() {
+  if (bilibiliSyncTimer) clearNodeInterval(bilibiliSyncTimer);
+
+  // 检查 Bilibili 是否启用
+  if (!config.providers?.bilibili?.enabled) {
+    console.log('[Bilibili] 未启用，跳过自动同步');
+    return;
+  }
+
   const interval = config.server.syncInterval || 3600000;
-  syncTimer = setNodeInterval(async () => {
+  bilibiliSyncTimer = setNodeInterval(async () => {
     try {
-      const result = await syncHistory();
-      console.log(`自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      const result = await syncHistory('bilibili');
+      console.log(`[Bilibili] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
     } catch (e) {
-      console.error('自动同步失败:', e);
+      console.error('[Bilibili] 自动同步失败:', e);
     }
   }, interval);
-  console.log('自动同步定时器已启动，间隔(ms):', interval);
+  console.log(`[Bilibili] 自动同步定时器已启动，间隔: ${interval}ms`);
 }
-startAutoSync();
+startBilibiliAutoSync();
+
+// YouTube 自动同步定时器
+let youtubeSyncTimer = null;
+let youtubeNextSyncTimeout = null;
+
+/**
+ * 获取指定时区的当前时间
+ * @param {number} timezoneOffset - 时区偏移（小时），如 8 表示 UTC+8
+ * @returns {Date} 调整后的时间
+ */
+function getTimeInTimezone(timezoneOffset = 8) {
+  const now = new Date();
+  // 获取 UTC 时间，然后加上时区偏移
+  const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utcTime + timezoneOffset * 3600000);
+}
+
+/**
+ * 计算下一个 YouTube 同步时间点
+ * @returns {{nextTime: Date, delay: number}}
+ */
+function getNextYouTubeSyncTime() {
+  // 获取配置的时区，默认北京时间 (UTC+8)
+  const timezoneOffset = config.server?.timezone ?? 8;
+  const tzNow = getTimeInTimezone(timezoneOffset);
+  const hours = tzNow.getHours();
+
+  // 计算目标时间点（在配置时区中的 00:00 或 12:00）
+  let targetHour;
+  let daysToAdd = 0;
+
+  if (hours < 12) {
+    targetHour = 12;
+  } else {
+    targetHour = 0;
+    daysToAdd = 1;
+  }
+
+  // 构建目标时间（在配置时区）
+  const targetInTz = new Date(
+    tzNow.getFullYear(),
+    tzNow.getMonth(),
+    tzNow.getDate() + daysToAdd,
+    targetHour, 0, 0
+  );
+
+  // 转换回本地时间进行延迟计算
+  const now = new Date();
+  const targetUtc = targetInTz.getTime() - timezoneOffset * 3600000;
+  const targetLocal = new Date(targetUtc - now.getTimezoneOffset() * 60000);
+
+  const delay = targetLocal.getTime() - now.getTime();
+
+  // 用于日志显示的时间字符串
+  const displayTime = `${targetInTz.getFullYear()}-${String(targetInTz.getMonth() + 1).padStart(2, '0')}-${String(targetInTz.getDate()).padStart(2, '0')} ${String(targetInTz.getHours()).padStart(2, '0')}:00 (UTC+${timezoneOffset})`;
+
+  return { nextTime: targetLocal, delay, displayTime };
+}
+
+/**
+ * 执行 YouTube 同步
+ */
+async function doYouTubeSync() {
+  try {
+    console.log('[YouTube] 开始自动同步...');
+    const result = await syncHistory('youtube');
+    console.log(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+  } catch (e) {
+    console.error('[YouTube] 自动同步失败:', e);
+  }
+}
+
+/**
+ * 启动 YouTube 自动同步
+ */
+function startYouTubeAutoSync() {
+  // 清理现有定时器
+  if (youtubeSyncTimer) clearNodeInterval(youtubeSyncTimer);
+  if (youtubeNextSyncTimeout) clearTimeout(youtubeNextSyncTimeout);
+
+  // 检查 YouTube 是否启用
+  if (!config.providers?.youtube?.enabled) {
+    console.log('[YouTube] 未启用，跳过自动同步');
+    return;
+  }
+
+  const interval = config.providers.youtube.syncInterval || 43200000; // 默认 12 小时
+  const { delay, displayTime } = getNextYouTubeSyncTime();
+
+  console.log(`[YouTube] 下一次同步时间: ${displayTime}，等待 ${Math.round(delay / 60000)} 分钟`);
+
+  // 先设置一个 timeout 到下一个定时点
+  youtubeNextSyncTimeout = setTimeout(() => {
+    // 执行第一次同步
+    doYouTubeSync();
+
+    // 然后启动固定间隔的定时器
+    youtubeSyncTimer = setNodeInterval(doYouTubeSync, interval);
+    console.log(`[YouTube] 定时同步已启动，间隔: ${interval}ms`);
+  }, delay);
+}
+startYouTubeAutoSync();
 
 /**
  * 构建查询历史记录的 SQL
