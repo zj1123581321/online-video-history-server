@@ -9,13 +9,14 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
-    "node-fetch": "^3.3.2",
     "dayjs": "^1.11.10",
-    "better-sqlite3": "^11.7.0"
+    "evp_bytestokey": "^1.0.3",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
   }
-} 
+}

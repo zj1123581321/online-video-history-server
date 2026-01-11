@@ -109,10 +109,45 @@ npm install
 
 ### 获取 Bilibili Cookie
 
+**方式一：手动配置**
+
 1. 登录 [B站](https://www.bilibili.com)
 2. 打开浏览器开发者工具（F12）
 3. 切换到 Application/存储 -> Cookies
 4. 复制 `SESSDATA` 和 `bili_jct` 的值
+
+**方式二：使用 CookieCloud 自动同步（推荐）**
+
+如果你已经部署了 [CookieCloud](https://github.com/easychen/CookieCloud) 服务，可以配置自动同步 cookie：
+
+```json
+{
+  "cookiecloud": {
+    "enabled": true,
+    "url": "https://your-cookiecloud-server.com",
+    "uuid": "your-uuid-here",
+    "password": "your-password-here",
+    "platforms": {
+      "bilibili": {
+        "domain": ".bilibili.com"
+      }
+    }
+  }
+}
+```
+
+| 配置项 | 说明 |
+|--------|------|
+| `cookiecloud.enabled` | 是否启用 CookieCloud |
+| `cookiecloud.url` | CookieCloud 服务地址 |
+| `cookiecloud.uuid` | CookieCloud UUID |
+| `cookiecloud.password` | CookieCloud 解密密码 |
+| `cookiecloud.platforms.bilibili.domain` | Bilibili cookie 的域名，默认 `.bilibili.com` |
+
+启用 CookieCloud 后：
+- 系统会自动从云端获取最新的 cookie
+- cookie 会缓存到本地 `data/cookie_cache.json`，根据过期时间自动刷新
+- 如果 CookieCloud 不可用，会自动降级使用 `providers.bilibili.cookie` 静态配置
 
 > **安全提示**：Cookie 包含敏感信息，请妥善保管，不要泄露或提交到公开仓库。
 

@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { syncHistory, initProviders, deleteRemoteHistory, getEnabledProviders } from './services/history.js';
+import { initCookieService } from './services/cookie.js';
 import fetch from 'node-fetch';
 import { setInterval as setNodeInterval, clearInterval as clearNodeInterval } from 'timers';
 import db, { initDatabase } from './db/index.js';
@@ -17,6 +18,9 @@ const config = JSON.parse(readFileSync(join(__dirname, '../config.json'), 'utf-8
 
 // 初始化数据库
 initDatabase();
+
+// 初始化 Cookie 服务（需要在 Providers 之前）
+initCookieService(config);
 
 // 初始化 Providers
 initProviders(config);

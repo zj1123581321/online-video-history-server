@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import { BaseProvider } from './base.js';
 import db from '../db/index.js';
+import { getCookieService } from '../services/cookie.js';
 
 // 预编译 SQL 语句
 const stmts = {
@@ -20,6 +21,8 @@ export class BilibiliProvider extends BaseProvider {
   constructor(config) {
     super(config);
     this.platform = 'bilibili';
+    // 缓存当前 cookie，避免每次请求都获取
+    this._cachedCookie = null;
   }
 
   /**
@@ -28,6 +31,15 @@ export class BilibiliProvider extends BaseProvider {
    */
   validateConfig() {
     if (!this.enabled) return false;
+    // CookieCloud 模式下不需要检查静态 cookie 配置
+    try {
+      const cookieService = getCookieService();
+      if (cookieService.isCookieCloudEnabled()) {
+        return true;
+      }
+    } catch {
+      // CookieService 未初始化，检查静态配置
+    }
     if (!this.config.cookie) {
       console.warn('Bilibili: cookie 未配置');
       return false;
@@ -36,11 +48,30 @@ export class BilibiliProvider extends BaseProvider {
   }
 
   /**
+   * 获取当前 cookie（优先从 CookieService 获取）
+   * @returns {Promise<string>}
+   */
+  async getCookie() {
+    try {
+      const cookieService = getCookieService();
+      return await cookieService.getCookie(this.platform);
+    } catch {
+      // CookieService 未初始化，使用静态配置
+      if (!this.config.cookie) {
+        throw new Error('Bilibili: cookie 未配置');
+      }
+      return this.config.cookie;
+    }
+  }
+
+  /**
    * 从 cookie 中提取 bili_jct
+   * @param {string} cookie - cookie 字符串
    * @returns {string|null}
    */
-  getBiliJct() {
-    const match = this.config.cookie?.match(/bili_jct=([^;]+)/);
+  getBiliJct(cookie) {
+    const cookieStr = cookie || this.config.cookie;
+    const match = cookieStr?.match(/bili_jct=([^;]+)/);
     return match ? match[1] : null;
   }
 
@@ -75,6 +106,10 @@ export class BilibiliProvider extends BaseProvider {
     if (!this.validateConfig()) {
       throw new Error('Bilibili: 配置无效');
     }
+
+    // 获取 cookie（优先从 CookieCloud 获取）
+    const cookie = await this.getCookie();
+    console.log('[Bilibili] 已获取 cookie');
 
     let hasMore = true;
     let max = 0;
@@ -119,7 +154,7 @@ export class BilibiliProvider extends BaseProvider {
         `https://api.bilibili.com/x/web-interface/history/cursor?max=${max}&view_at=${view_at}&type=${type}&ps=${ps}`,
         {
           headers: {
-            Cookie: this.config.cookie,
+            Cookie: cookie,
           },
         }
       );
@@ -176,7 +211,10 @@ export class BilibiliProvider extends BaseProvider {
    * @returns {Promise<boolean>}
    */
   async deleteRemote(item) {
-    const biliJct = this.getBiliJct();
+    // 获取 cookie
+    const cookie = await this.getCookie();
+    const biliJct = this.getBiliJct(cookie);
+
     if (!biliJct) {
       throw new Error('Bilibili: 未找到 bili_jct，请检查 cookie 配置');
     }
@@ -188,7 +226,7 @@ export class BilibiliProvider extends BaseProvider {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
         'Content-Type': 'application/x-www-form-urlencoded',
         'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cookie': this.config.cookie
+        'Cookie': cookie
       },
       body: new URLSearchParams({
         'kid': kid,

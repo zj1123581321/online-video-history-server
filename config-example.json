@@ -13,5 +13,16 @@
       "enabled": true,
       "cookie": "SESSDATA=your_sessdata_here; bili_jct=your_bili_jct_here"
     }
+  },
+  "cookiecloud": {
+    "enabled": false,
+    "url": "https://your-cookiecloud-server.com",
+    "uuid": "your-uuid-here",
+    "password": "your-password-here",
+    "platforms": {
+      "bilibili": {
+        "domain": ".bilibili.com"
+      }
+    }
   }
 }
