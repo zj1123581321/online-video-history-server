@@ -3,7 +3,7 @@ import cors from 'cors';
 import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { syncHistory } from './services/history.js';
+import { syncHistory, initProviders, deleteRemoteHistory, getEnabledProviders } from './services/history.js';
 import fetch from 'node-fetch';
 import { setInterval as setNodeInterval, clearInterval as clearNodeInterval } from 'timers';
 import db, { initDatabase } from './db/index.js';
@@ -17,6 +17,9 @@ const config = JSON.parse(readFileSync(join(__dirname, '../config.json'), 'utf-8
 // 初始化数据库
 initDatabase();
 
+// 初始化 Providers
+initProviders(config);
+
 // 中间件
 app.use(cors());
 app.use(express.json());
@@ -26,7 +29,6 @@ app.use(express.static(join(__dirname, '../public')));
 const stmts = {
   getById: db.prepare('SELECT * FROM history WHERE id = ?'),
   deleteById: db.prepare('DELETE FROM history WHERE id = ?'),
-  count: db.prepare('SELECT COUNT(*) as total FROM history'),
 };
 
 // 自动同步定时器
@@ -36,8 +38,8 @@ function startAutoSync() {
   const interval = config.server.syncInterval || 3600000;
   syncTimer = setNodeInterval(async () => {
     try {
-      await syncHistory();
-      console.log('自动同步成功');
+      const result = await syncHistory();
+      console.log(`自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
     } catch (e) {
       console.error('自动同步失败:', e);
     }
@@ -52,10 +54,16 @@ startAutoSync();
  * @returns {{sql: string, params: any[]}}
  */
 function buildHistoryQuery(params) {
-  const { keyword = '', authorKeyword = '', date = '' } = params;
+  const { keyword = '', authorKeyword = '', date = '', platform = '' } = params;
 
   let sql = 'SELECT * FROM history WHERE 1=1';
   const sqlParams = [];
+
+  // 平台过滤
+  if (platform && platform !== 'all') {
+    sql += ' AND platform = ?';
+    sqlParams.push(platform);
+  }
 
   if (keyword) {
     sql += ' AND title LIKE ?';
@@ -83,13 +91,13 @@ function buildHistoryQuery(params) {
 // 获取历史记录
 app.get('/api/history', (req, res) => {
   try {
-    const { keyword = '', authorKeyword = '', date = '', page = 1, pageSize = 20 } = req.query;
+    const { keyword = '', authorKeyword = '', date = '', platform = '', page = 1, pageSize = 20 } = req.query;
     const pageNum = parseInt(page, 10);
     const pageSizeNum = parseInt(pageSize, 10);
     const offset = (pageNum - 1) * pageSizeNum;
 
     // 构建查询
-    const { sql, params } = buildHistoryQuery({ keyword, authorKeyword, date });
+    const { sql, params } = buildHistoryQuery({ keyword, authorKeyword, date, platform });
 
     // 查询总数
     const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total').replace(' ORDER BY view_time DESC', '');
@@ -117,13 +125,23 @@ app.get('/api/history', (req, res) => {
   }
 });
 
+// 获取已启用的平台列表
+app.get('/api/platforms', (req, res) => {
+  const providers = getEnabledProviders();
+  res.json({
+    platforms: Object.keys(providers)
+  });
+});
+
 // 手动同步历史记录
 app.post('/api/history/sync', async (req, res) => {
   try {
-    const result = await syncHistory();
+    const { platform } = req.body || {};
+    const result = await syncHistory(platform || null);
     res.json({
       success: true,
-      message: `同步成功，新增 ${result.newCount} 条记录，更新 ${result.updateCount} 条记录`
+      message: `同步成功，新增 ${result.totalNew} 条记录，更新 ${result.totalUpdate} 条记录`,
+      details: result.results
     });
   } catch (error) {
     console.error('同步历史记录失败:', error);
@@ -141,33 +159,12 @@ app.delete('/api/history/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: '记录不存在' });
     }
 
-    // 从 cookie 中提取 bili_jct
-    const cookieStr = config.bilibili.cookie;
-    const biliJctMatch = cookieStr.match(/bili_jct=([^;]+)/);
-    if (!biliJctMatch) {
-      throw new Error('未找到 bili_jct，请检查 cookie 配置');
-    }
-    const biliJct = biliJctMatch[1];
-
-    // 调用 B站 API 删除远程内容
-    const kid = `${item.business}_${id}`;
-    const response = await fetch('https://api.bilibili.com/x/v2/history/delete', {
-      method: 'POST',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cookie': config.bilibili.cookie
-      },
-      body: new URLSearchParams({
-        'kid': kid,
-        'csrf': biliJct
-      })
-    });
-
-    const data = await response.json();
-    if (data.code !== 0) {
-      throw new Error(data.message || '删除远程内容失败');
+    // 调用对应平台的 Provider 删除远程记录
+    try {
+      await deleteRemoteHistory(item);
+    } catch (error) {
+      console.warn(`删除远程记录失败 (${item.platform}):`, error.message);
+      // 继续删除本地记录
     }
 
     // 删除本地记录

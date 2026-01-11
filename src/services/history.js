@@ -1,148 +1,107 @@
-import fetch from 'node-fetch';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import db from '../db/index.js';
+import { BilibiliProvider } from '../providers/bilibili.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const config = JSON.parse(readFileSync(join(__dirname, '../../config.json'), 'utf-8'));
-
-// 预编译 SQL 语句提升性能
-const stmts = {
-  getById: db.prepare('SELECT id, view_time FROM history WHERE id = ?'),
-  insert: db.prepare(`
-    INSERT INTO history
-    (id, business, bvid, cid, title, tag_name, cover, view_time, uri, author_name, author_mid, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-  updateViewTime: db.prepare('UPDATE history SET view_time = ?, timestamp = ? WHERE id = ?'),
+// Provider 注册表
+const providerRegistry = {
+  bilibili: BilibiliProvider,
+  // youtube: YouTubeProvider,  // 未来扩展
 };
 
+// 已初始化的 Provider 实例
+let providers = {};
+
 /**
- * 从 B站 同步历史记录到本地数据库
- * @returns {Promise<{success: boolean, newCount: number, updateCount: number, message: string}>}
+ * 初始化所有 Provider
+ * @param {object} config - 配置对象
  */
-export async function syncHistory() {
-  try {
-    let hasMore = true;
-    let max = 0;
-    let view_at = 0;
-    const type = 'all';
-    const ps = 30;
-    let newCount = 0;
-    let updateCount = 0;
-    let processedIds = new Set();
+export function initProviders(config) {
+  providers = {};
 
-    // 使用事务批量处理
-    const batchInsert = db.transaction((items) => {
-      for (const item of items) {
-        const existing = stmts.getById.get(item.id);
+  // 兼容旧配置格式
+  const providersConfig = config.providers || {
+    bilibili: {
+      enabled: true,
+      cookie: config.bilibili?.cookie
+    }
+  };
 
-        if (!existing) {
-          // 新记录
-          stmts.insert.run(
-            item.id,
-            item.business,
-            item.bvid,
-            item.cid,
-            item.title,
-            item.tag_name,
-            item.cover,
-            item.viewTime,
-            item.uri,
-            item.author_name,
-            item.author_mid,
-            item.timestamp
-          );
-          newCount++;
-        } else if (existing.view_time !== item.viewTime) {
-          // 更新观看时间
-          stmts.updateViewTime.run(item.viewTime, item.timestamp, item.id);
-          updateCount++;
-        }
-      }
-    });
-
-    while (hasMore) {
-      const response = await fetch(
-        `https://api.bilibili.com/x/web-interface/history/cursor?max=${max}&view_at=${view_at}&type=${type}&ps=${ps}`,
-        {
-          headers: {
-            Cookie: config.bilibili.cookie,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('获取历史记录失败');
-      }
-
-      const data = await response.json();
-
-      if (data.code !== 0) {
-        throw new Error(data.message || '获取历史记录失败');
-      }
-
-      hasMore = data.data.list.length > 0;
-      max = data.data.cursor.max;
-      view_at = data.data.cursor.view_at;
-
-      if (data.data.list.length > 0) {
-        const prevNewCount = newCount;
-        const prevUpdateCount = updateCount;
-
-        // 转换数据格式
-        const items = [];
-        for (const item of data.data.list) {
-          // 检查是否已经处理过这个 ID
-          if (processedIds.has(item.history.oid)) {
-            continue;
-          }
-          processedIds.add(item.history.oid);
-
-          items.push({
-            id: item.history.oid,
-            business: item.history.business,
-            bvid: item.history.bvid,
-            cid: item.history.cid,
-            title: item.title,
-            tag_name: item.tag_name,
-            cover: item.cover || (item.covers && item.covers[0]) || '',
-            viewTime: item.view_at,
-            uri: item.uri || '',
-            author_name: item.author_name || '',
-            author_mid: item.author_mid || 0,
-            timestamp: Date.now(),
-          });
-        }
-
-        // 批量插入/更新
-        batchInsert(items);
-
-        console.log(`同步了 ${data.data.list.length} 条历史记录`);
-
-        // 如果这一批数据中没有任何新增或更新，且已经处理了足够多的记录，就退出循环
-        const hasNewOrUpdated = newCount > prevNewCount || updateCount > prevUpdateCount;
-        if (!hasNewOrUpdated && processedIds.size >= 100) {
-          console.log('没有新的更新，同步结束');
-          break;
-        }
-
-        // 添加延时，避免请求过于频繁
-        await new Promise(resolve => setTimeout(resolve, 1000));
+  for (const [name, ProviderClass] of Object.entries(providerRegistry)) {
+    const providerConfig = providersConfig[name];
+    if (providerConfig) {
+      const provider = new ProviderClass(providerConfig);
+      if (provider.isEnabled() && provider.validateConfig()) {
+        providers[name] = provider;
+        console.log(`[Provider] ${name} 已启用`);
+      } else {
+        console.log(`[Provider] ${name} 未启用或配置无效`);
       }
     }
-
-    return {
-      success: true,
-      newCount,
-      updateCount,
-      message: `成功同步 ${newCount} 条新记录，更新 ${updateCount} 条记录`
-    };
-  } catch (error) {
-    console.error('同步历史记录失败:', error);
-    throw error;
   }
+
+  return providers;
+}
+
+/**
+ * 获取指定平台的 Provider
+ * @param {string} platform - 平台名称
+ * @returns {BaseProvider|null}
+ */
+export function getProvider(platform) {
+  return providers[platform] || null;
+}
+
+/**
+ * 获取所有已启用的 Provider
+ * @returns {object}
+ */
+export function getEnabledProviders() {
+  return providers;
+}
+
+/**
+ * 同步历史记录
+ * @param {string} [platform] - 可选，指定平台；不传则同步所有已启用平台
+ * @returns {Promise<{results: object, totalNew: number, totalUpdate: number}>}
+ */
+export async function syncHistory(platform = null) {
+  const results = {};
+  let totalNew = 0;
+  let totalUpdate = 0;
+
+  const targetProviders = platform
+    ? { [platform]: providers[platform] }
+    : providers;
+
+  for (const [name, provider] of Object.entries(targetProviders)) {
+    if (!provider) {
+      results[name] = { error: '平台未启用' };
+      continue;
+    }
+
+    try {
+      console.log(`[Sync] 开始同步 ${name}...`);
+      const result = await provider.sync();
+      results[name] = result;
+      totalNew += result.newCount;
+      totalUpdate += result.updateCount;
+      console.log(`[Sync] ${name} 同步完成: 新增 ${result.newCount}, 更新 ${result.updateCount}`);
+    } catch (error) {
+      console.error(`[Sync] ${name} 同步失败:`, error.message);
+      results[name] = { error: error.message };
+    }
+  }
+
+  return { results, totalNew, totalUpdate };
+}
+
+/**
+ * 删除远程历史记录
+ * @param {object} item - 历史记录项（需包含 platform 字段）
+ * @returns {Promise<boolean>}
+ */
+export async function deleteRemoteHistory(item) {
+  const provider = providers[item.platform];
+  if (!provider) {
+    throw new Error(`平台 ${item.platform} 未启用`);
+  }
+  return provider.deleteRemote(item);
 }

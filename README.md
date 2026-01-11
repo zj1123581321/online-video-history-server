@@ -1,18 +1,23 @@
-# Bilibili 历史记录服务器
+# 视频历史记录服务器
 
-一个轻量级的 B站观看历史记录管理系统，支持自动同步、搜索过滤、导入导出等功能。
+一个轻量级的多平台视频观看历史记录管理系统，支持自动同步、搜索过滤、导入导出等功能。
+
+目前支持的平台：
+- **Bilibili**（已实现）
+- **YouTube**（规划中）
 
 本项目参考了 [bilibili-history-wxt](https://github.com/mundane799699/bilibili-history-wxt) 项目的部分实现。
 
 ## 功能特点
 
-- **自动同步**：定时从 B站 同步观看历史记录，支持自定义同步间隔
+- **多平台支持**：可扩展的 Provider 架构，支持多个视频平台
+- **自动同步**：定时同步各平台观看历史记录，支持自定义同步间隔
 - **手动同步**：支持手动触发同步操作
-- **智能搜索**：支持按视频标题、UP主名称、日期等多维度过滤
+- **智能搜索**：支持按视频标题、UP主名称、日期、平台等多维度过滤
 - **无限滚动**：前端支持滚动到底部自动加载更多内容
 - **删除功能**：同时删除远程和本地历史记录
 - **导入/导出**：支持历史记录 JSON 格式的导出和导入
-- **图片代理**：解决 B站 图片跨域问题
+- **图片代理**：解决跨域图片加载问题
 - **数据本地存储**：使用 SQLite 数据库存储，查询性能优秀，方便备份和迁移
 
 ## 项目结构
@@ -23,8 +28,11 @@ bilibili-history-server/
 │   ├── index.js                      # 主应用程序入口
 │   ├── db/
 │   │   └── index.js                  # 数据库初始化模块
+│   ├── providers/                    # 平台 Provider 模块
+│   │   ├── base.js                   # Provider 基类
+│   │   └── bilibili.js               # Bilibili 实现
 │   └── services/
-│       └── history.js                # 历史记录同步服务
+│       └── history.js                # 历史记录服务（Provider 调度）
 ├── public/                           # 前端静态资源
 │   └── index.html                    # 单页面应用
 ├── data/                             # 数据存储目录
@@ -69,12 +77,15 @@ npm install
 复制 `config-example.json` 为 `config.json` 并修改配置：
 ```json
 {
-  "bilibili": {
-    "cookie": "SESSDATA=your_sessdata_here; bili_jct=your_bili_jct_here"
-  },
   "server": {
     "port": 3000,
     "syncInterval": 3600000
+  },
+  "providers": {
+    "bilibili": {
+      "enabled": true,
+      "cookie": "SESSDATA=your_sessdata_here; bili_jct=your_bili_jct_here"
+    }
   }
 }
 ```
@@ -83,11 +94,12 @@ npm install
 
 | 配置项 | 说明 |
 |--------|------|
-| `bilibili.cookie` | B站登录凭证，需包含 `SESSDATA` 和 `bili_jct` |
 | `server.port` | 服务器端口，默认 3000 |
 | `server.syncInterval` | 自动同步间隔（毫秒），默认 3600000（1小时） |
+| `providers.bilibili.enabled` | 是否启用 Bilibili 同步 |
+| `providers.bilibili.cookie` | B站登录凭证，需包含 `SESSDATA` 和 `bili_jct` |
 
-### 获取 Cookie
+### 获取 Bilibili Cookie
 
 1. 登录 [B站](https://www.bilibili.com)
 2. 打开浏览器开发者工具（F12）
@@ -117,6 +129,7 @@ npm start
 GET /api/history
 
 参数：
+- platform: 平台过滤（bilibili/youtube/all），默认 all
 - keyword: 视频标题搜索关键词（可选）
 - authorKeyword: UP主名称关键词（可选）
 - date: 日期，YYYY-MM-DD 格式（可选）
@@ -131,14 +144,30 @@ GET /api/history
 }
 ```
 
+### 获取已启用的平台
+```
+GET /api/platforms
+
+响应：
+{
+  "platforms": ["bilibili"]
+}
+```
+
 ### 同步历史记录
 ```
 POST /api/history/sync
 
+请求体（可选）：
+{ "platform": "bilibili" }  // 不传则同步所有已启用平台
+
 响应：
 {
   "success": true,
-  "message": "同步成功，新增5条记录，更新2条记录"
+  "message": "同步成功，新增5条记录，更新2条记录",
+  "details": {
+    "bilibili": { "newCount": 5, "updateCount": 2 }
+  }
 }
 ```
 
@@ -162,8 +191,8 @@ POST /api/set-sync-interval
 
 响应：
 {
-  "success": true,
-  "message": "同步间隔已更新"
+  "message": "同步间隔已更新",
+  "interval": 3600000
 }
 ```
 
@@ -179,7 +208,7 @@ GET /api/get-sync-interval
 ```
 GET /img-proxy?url=<encoded-url>
 
-说明：用于代理 B站 图片，解决跨域问题
+说明：用于代理图片，解决跨域问题
 ```
 
 ## 数据存储
@@ -189,19 +218,20 @@ GET /img-proxy?url=<encoded-url>
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `id` | INTEGER | 历史记录ID（主键） |
+| `platform` | TEXT | 来源平台（bilibili/youtube） |
 | `business` | TEXT | 内容类型 |
-| `bvid` | TEXT | B站视频BV号 |
+| `bvid` | TEXT | 视频ID |
 | `cid` | INTEGER | 内容ID |
 | `title` | TEXT | 视频标题 |
 | `tag_name` | TEXT | 分类标签 |
 | `cover` | TEXT | 封面图片URL |
 | `view_time` | INTEGER | 观看时间（Unix时间戳） |
 | `uri` | TEXT | 资源URI |
-| `author_name` | TEXT | UP主名称 |
-| `author_mid` | INTEGER | UP主ID |
+| `author_name` | TEXT | 作者名称 |
+| `author_mid` | INTEGER | 作者ID |
 | `timestamp` | INTEGER | 本地记录时间戳 |
 
-### 支持的内容类型
+### 支持的内容类型（Bilibili）
 
 | 类型 | 说明 |
 |------|------|
@@ -211,6 +241,15 @@ GET /img-proxy?url=<encoded-url>
 | `article-list` | 文章列表 |
 | `live` | 直播 |
 | `cheese` | 课程 |
+
+## 扩展新平台
+
+项目采用 Provider 架构，扩展新平台只需：
+
+1. 在 `src/providers/` 下创建新的 Provider 类，继承 `BaseProvider`
+2. 实现 `sync()` 和 `deleteRemote()` 方法
+3. 在 `src/services/history.js` 中注册新 Provider
+4. 在配置文件中添加对应平台的配置
 
 ## 数据备份
 

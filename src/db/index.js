@@ -22,6 +22,7 @@ function initSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS history (
       id INTEGER PRIMARY KEY,
+      platform TEXT DEFAULT 'bilibili',
       business TEXT,
       bvid TEXT,
       cid INTEGER,
@@ -36,9 +37,21 @@ function initSchema() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_view_time ON history(view_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_platform ON history(platform);
     CREATE INDEX IF NOT EXISTS idx_title ON history(title);
     CREATE INDEX IF NOT EXISTS idx_author ON history(author_name);
   `);
+
+  // 检查并添加 platform 字段（兼容旧数据库）
+  const columns = db.prepare("PRAGMA table_info(history)").all();
+  const hasPlatform = columns.some(col => col.name === 'platform');
+  if (!hasPlatform) {
+    console.log('检测到旧数据库结构，添加 platform 字段...');
+    db.exec(`ALTER TABLE history ADD COLUMN platform TEXT DEFAULT 'bilibili'`);
+    db.exec(`UPDATE history SET platform = 'bilibili' WHERE platform IS NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_platform ON history(platform)`);
+    console.log('数据库结构升级完成');
+  }
 }
 
 /**
@@ -70,14 +83,15 @@ function migrateFromJson() {
     // 使用事务批量插入
     const insert = db.prepare(`
       INSERT OR REPLACE INTO history
-      (id, business, bvid, cid, title, tag_name, cover, view_time, uri, author_name, author_mid, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, platform, business, bvid, cid, title, tag_name, cover, view_time, uri, author_name, author_mid, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertMany = db.transaction((items) => {
       for (const item of items) {
         insert.run(
           item.id,
+          'bilibili',
           item.business || '',
           item.bvid || '',
           item.cid || 0,
