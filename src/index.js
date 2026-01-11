@@ -7,6 +7,7 @@ import { syncHistory, initProviders, deleteRemoteHistory, getEnabledProviders } 
 import fetch from 'node-fetch';
 import { setInterval as setNodeInterval, clearInterval as clearNodeInterval } from 'timers';
 import db, { initDatabase } from './db/index.js';
+import { createAuthMiddleware, setupAuthRoutes } from './middleware/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,6 +25,17 @@ initProviders(config);
 app.use(cors());
 app.use(express.json());
 app.use(express.static(join(__dirname, '../public')));
+
+// 认证路由（需要在认证中间件之前注册）
+setupAuthRoutes(app, config.auth);
+
+// 认证中间件（白名单路径不需要认证）
+const authWhitelist = [
+  '/api/auth/status',
+  '/api/auth/verify',
+  '/img-proxy'
+];
+app.use(createAuthMiddleware(config.auth, authWhitelist));
 
 // 预编译查询语句
 const stmts = {

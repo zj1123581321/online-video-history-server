@@ -81,6 +81,11 @@ npm install
     "port": 3000,
     "syncInterval": 3600000
   },
+  "auth": {
+    "password": "your_password_here",
+    "maxAttempts": 5,
+    "lockoutDuration": 300000
+  },
   "providers": {
     "bilibili": {
       "enabled": true,
@@ -96,6 +101,9 @@ npm install
 |--------|------|
 | `server.port` | 服务器端口，默认 3000 |
 | `server.syncInterval` | 自动同步间隔（毫秒），默认 3600000（1小时） |
+| `auth.password` | 访问密码，留空则不启用认证 |
+| `auth.maxAttempts` | 最大尝试次数，默认 5 |
+| `auth.lockoutDuration` | 锁定时长（毫秒），默认 300000（5分钟） |
 | `providers.bilibili.enabled` | 是否启用 Bilibili 同步 |
 | `providers.bilibili.cookie` | B站登录凭证，需包含 `SESSDATA` 和 `bili_jct` |
 

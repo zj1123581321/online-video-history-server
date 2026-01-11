@@ -3,6 +3,11 @@
     "port": 3000,
     "syncInterval": 3600000
   },
+  "auth": {
+    "password": "",
+    "maxAttempts": 5,
+    "lockoutDuration": 300000
+  },
   "providers": {
     "bilibili": {
       "enabled": true,

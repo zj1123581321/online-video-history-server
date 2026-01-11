@@ -117,6 +117,22 @@
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" /></svg>
     </button>
 
+    <!-- 登录弹窗 -->
+    <div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-lg w-[90vw] max-w-sm p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4 text-center">请输入访问密码</h2>
+            <div class="space-y-4">
+                <input type="password" id="authPasswordInput" placeholder="密码"
+                    class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
+                <div id="authError" class="text-red-500 text-sm hidden"></div>
+                <div id="authLockout" class="text-orange-500 text-sm hidden"></div>
+                <button id="authSubmitBtn" class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-semibold">
+                    登录
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentPage = 1;
         let isLoading = false;
@@ -125,6 +141,193 @@
         let currentAuthor = '';
         let currentDate = '';
         const DEFAULT_COVER = 'https://static.hdslb.com/images/akari.jpg';
+
+        // ==================== 认证模块 ====================
+        const AUTH_TOKEN_KEY = 'authToken';
+        let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+        let lockoutTimer = null;
+
+        /**
+         * 封装的 fetch 函数，自动添加认证头
+         */
+        async function authFetch(url, options = {}) {
+            const headers = {
+                ...options.headers,
+            };
+            if (authToken) {
+                headers['X-Auth-Token'] = authToken;
+            }
+            const response = await fetch(url, { ...options, headers });
+            // 如果返回 401，显示登录弹窗
+            if (response.status === 401) {
+                showAuthModal();
+                throw new Error('未授权访问');
+            }
+            return response;
+        }
+
+        /**
+         * 显示登录弹窗
+         */
+        function showAuthModal() {
+            document.getElementById('authModal').classList.remove('hidden');
+            document.getElementById('authPasswordInput').focus();
+        }
+
+        /**
+         * 隐藏登录弹窗
+         */
+        function hideAuthModal() {
+            document.getElementById('authModal').classList.add('hidden');
+            document.getElementById('authError').classList.add('hidden');
+            document.getElementById('authLockout').classList.add('hidden');
+            document.getElementById('authPasswordInput').value = '';
+        }
+
+        /**
+         * 更新锁定倒计时显示
+         */
+        function updateLockoutDisplay(remainingMs) {
+            const lockoutEl = document.getElementById('authLockout');
+            const submitBtn = document.getElementById('authSubmitBtn');
+            const passwordInput = document.getElementById('authPasswordInput');
+
+            if (remainingMs <= 0) {
+                lockoutEl.classList.add('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '登录';
+                passwordInput.disabled = false;
+                if (lockoutTimer) {
+                    clearInterval(lockoutTimer);
+                    lockoutTimer = null;
+                }
+                return;
+            }
+
+            const seconds = Math.ceil(remainingMs / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            lockoutEl.textContent = `尝试次数过多，请在 ${minutes}:${secs.toString().padStart(2, '0')} 后重试`;
+            lockoutEl.classList.remove('hidden');
+            submitBtn.disabled = true;
+            submitBtn.textContent = '已锁定';
+            passwordInput.disabled = true;
+        }
+
+        /**
+         * 启动锁定倒计时
+         */
+        function startLockoutTimer(remainingMs) {
+            if (lockoutTimer) clearInterval(lockoutTimer);
+            let remaining = remainingMs;
+            updateLockoutDisplay(remaining);
+            lockoutTimer = setInterval(() => {
+                remaining -= 1000;
+                updateLockoutDisplay(remaining);
+            }, 1000);
+        }
+
+        /**
+         * 检查认证状态
+         */
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/status');
+                const data = await response.json();
+
+                // 不需要认证
+                if (!data.required) {
+                    hideAuthModal();
+                    return true;
+                }
+
+                // 被锁定
+                if (data.locked) {
+                    showAuthModal();
+                    startLockoutTimer(data.lockoutRemaining);
+                    return false;
+                }
+
+                // 有 token，尝试验证
+                if (authToken) {
+                    const verifyRes = await fetch('/api/auth/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: authToken })
+                    });
+                    if (verifyRes.ok) {
+                        hideAuthModal();
+                        return true;
+                    }
+                }
+
+                // 需要登录
+                showAuthModal();
+                return false;
+            } catch (error) {
+                console.error('检查认证状态失败:', error);
+                return false;
+            }
+        }
+
+        /**
+         * 提交登录
+         */
+        async function submitAuth() {
+            const password = document.getElementById('authPasswordInput').value;
+            const errorEl = document.getElementById('authError');
+            const submitBtn = document.getElementById('authSubmitBtn');
+
+            if (!password) {
+                errorEl.textContent = '请输入密码';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '验证中...';
+            errorEl.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/auth/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    // 登录成功，保存 token
+                    authToken = password;
+                    localStorage.setItem(AUTH_TOKEN_KEY, authToken);
+                    hideAuthModal();
+                    loadHistory(true);
+                } else if (data.code === 'LOCKED') {
+                    // 被锁定
+                    startLockoutTimer(data.lockoutRemaining);
+                } else {
+                    // 密码错误
+                    errorEl.textContent = `密码错误，剩余尝试次数: ${data.remainingAttempts}`;
+                    errorEl.classList.remove('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '登录';
+                }
+            } catch (error) {
+                errorEl.textContent = '验证失败，请重试';
+                errorEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '登录';
+            }
+        }
+
+        // 登录按钮事件
+        document.getElementById('authSubmitBtn').addEventListener('click', submitAuth);
+        // 回车提交
+        document.getElementById('authPasswordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitAuth();
+        });
+
+        // ==================== 认证模块结束 ====================
 
         // 防抖函数
         function debounce(func, wait) {
@@ -142,7 +345,7 @@
         // 从服务器获取当前同步间隔
         async function fetchSyncInterval() {
             try {
-                const response = await fetch('/api/get-sync-interval');
+                const response = await authFetch('/api/get-sync-interval');
                 const data = await response.json();
                 document.getElementById('intervalInput').value = data.interval / 60000; // 转换为分钟
             } catch (error) {
@@ -150,8 +353,15 @@
             }
         }
 
-        // 页面加载时获取同步间隔
-        fetchSyncInterval();
+        // 页面初始化
+        async function initApp() {
+            const authed = await checkAuthStatus();
+            if (authed) {
+                fetchSyncInterval();
+                loadHistory();
+            }
+        }
+        initApp();
 
         // 加载历史记录
         async function loadHistory(reset = false) {
@@ -166,7 +376,7 @@
             isLoading = true;
             document.getElementById('loading').classList.remove('hidden');
             try {
-                const response = await fetch(`/api/history?page=${currentPage}&pageSize=20&keyword=${currentKeyword}&authorKeyword=${currentAuthor}&date=${currentDate}`);
+                const response = await authFetch(`/api/history?page=${currentPage}&pageSize=20&keyword=${currentKeyword}&authorKeyword=${currentAuthor}&date=${currentDate}`);
                 const data = await response.json();
                 const historyList = document.getElementById('historyList');
                 data.items.forEach(item => {
@@ -211,7 +421,7 @@
             syncBtn.disabled = true;
             syncBtn.textContent = '同步中...';
             try {
-                const response = await fetch('/api/history/sync', { method: 'POST' });
+                const response = await authFetch('/api/history/sync', { method: 'POST' });
                 const data = await response.json();
                 alert(data.message);
                 loadHistory(true);
@@ -229,7 +439,7 @@
             if (!confirm('确定要删除这条记录吗？')) return;
             try {
                 // 调用后端删除API
-                const response = await fetch(`/api/history/${id}`, { method: 'DELETE' });
+                const response = await authFetch(`/api/history/${id}`, { method: 'DELETE' });
                 const data = await response.json();
                 if (data.success) {
                     alert('删除成功');
@@ -286,8 +496,6 @@
             loadHistory(true);
         });
         document.getElementById('syncBtn').addEventListener('click', syncHistory);
-        // 初始加载
-        loadHistory();
 
         // 日期按钮事件
         const dateInput = document.getElementById('dateInput');
@@ -342,7 +550,7 @@
         // 导出历史记录
         const exportBtn = document.getElementById('exportBtn');
         exportBtn.onclick = async () => {
-            const res = await fetch('/api/history');
+            const res = await authFetch('/api/history');
             const data = await res.json();
             const blob = new Blob([JSON.stringify(data.items, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
@@ -368,7 +576,7 @@
                 if (!Array.isArray(items)) throw new Error('文件格式错误');
                 // 逐条POST导入（可优化为批量API）
                 for (const item of items) {
-                    await fetch('/api/history', {
+                    await authFetch('/api/history', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(item)
@@ -402,7 +610,7 @@
                 return;
             }
             try {
-                const response = await fetch('/api/set-sync-interval', {
+                const response = await authFetch('/api/set-sync-interval', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ interval: interval * 60000 }) // 转换为毫秒
