@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon --ignore data/ src/index.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
