@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ============================================
 # Docker Image Import Script (Linux)
-# For: Bilibili History Server
+# For: Online Video History Server
 # ============================================
 
 set -e
 set -o pipefail
 
 echo "======================================"
-echo "  Bilibili History Server - Image Import"
+echo "  Online Video History Server - Image Import"
 echo "======================================"
 echo ""
 

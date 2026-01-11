@@ -1,15 +1,15 @@
 # ============================================
-# Docker Compose for Bilibili History Server
+# Docker Compose for Online Video History Server
 # Local development/testing configuration
 # ============================================
 
 services:
-  bilibili-history:
+  video-history:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: bilibili-history-server:latest
-    container_name: bilibili-history
+    image: online-video-history-server:latest
+    container_name: video-history
     restart: unless-stopped
     ports:
       - "3000:3000"

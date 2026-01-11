@@ -1,23 +1,33 @@
 # ============================================
-# Dockerfile for Bilibili History Server
+# Dockerfile for Online Video History Server
 # Multi-platform video watching history manager
+# Using multi-stage build to reduce image size
 # ============================================
 
-FROM node:18-alpine
+# Stage 1: Build stage (compile native modules)
+FROM node:18-alpine AS builder
 
 # Install build dependencies for better-sqlite3
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
 
-# Copy package files first for better caching
+# Copy package files
 COPY package.json package-lock.json* ./
 
-# Install dependencies
+# Install all dependencies (including dev for build)
 RUN npm install --omit=dev && npm cache clean --force
 
-# Remove build dependencies to reduce image size
-RUN apk del python3 make g++
+# Stage 2: Production stage (minimal runtime)
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy only the compiled node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy package.json for reference
+COPY package.json ./
 
 # Copy application source
 COPY src/ ./src/

@@ -2,11 +2,11 @@
 chcp 65001 >nul
 REM ============================================
 REM Docker Image Build and Export Script (Windows)
-REM For: Bilibili History Server
+REM For: Online Video History Server
 REM ============================================
 
 echo ======================================
-echo   Bilibili History Server - Image Build
+echo   Online Video History Server - Image Build
 echo ======================================
 echo.
 
@@ -20,7 +20,7 @@ if errorlevel 1 (
 )
 
 REM Set image name
-set IMAGE_NAME=bilibili-history-server
+set IMAGE_NAME=online-video-history-server
 
 REM Get current datetime (format: YYYYMMDD-HHMMSS)
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I
@@ -32,7 +32,7 @@ set IMAGE_LATEST=%IMAGE_NAME%:latest
 
 REM Set output file names
 set OUTPUT_DIR=%~dp0export
-set TAR_FILE=%OUTPUT_DIR%\bilibili-history-server-%TIMESTAMP%.tar
+set TAR_FILE=%OUTPUT_DIR%\online-video-history-server-%TIMESTAMP%.tar
 set IMPORT_SCRIPT=%OUTPUT_DIR%\import_image.sh
 
 echo [1/5] Preparing output directory...
@@ -81,7 +81,7 @@ if not exist "%TEMPLATE_FILE%" (
 )
 
 REM Use PowerShell to replace placeholders in template (using Unix LF line endings)
-powershell -Command "$content = Get-Content '%TEMPLATE_FILE%' -Raw; $content = $content -replace '__IMAGE_NAME__', '%IMAGE_NAME%'; $content = $content -replace '__IMAGE_TAG__', '%IMAGE_TAG%'; $content = $content -replace '__TIMESTAMP__', '%TIMESTAMP%'; $content = $content -replace '__TAR_FILE__', 'bilibili-history-server-%TIMESTAMP%.tar'; $content = $content -replace \"`r`n\", \"`n\"; [System.IO.File]::WriteAllText('%IMPORT_SCRIPT%', $content, [System.Text.UTF8Encoding]::new($false))"
+powershell -Command "$content = Get-Content '%TEMPLATE_FILE%' -Raw; $content = $content -replace '__IMAGE_NAME__', '%IMAGE_NAME%'; $content = $content -replace '__IMAGE_TAG__', '%IMAGE_TAG%'; $content = $content -replace '__TIMESTAMP__', '%TIMESTAMP%'; $content = $content -replace '__TAR_FILE__', 'online-video-history-server-%TIMESTAMP%.tar'; $content = $content -replace \"`r`n\", \"`n\"; [System.IO.File]::WriteAllText('%IMPORT_SCRIPT%', $content, [System.Text.UTF8Encoding]::new($false))"
 
 if errorlevel 1 (
     echo [ERROR] Failed to generate import script!
@@ -112,7 +112,7 @@ echo   Next Steps
 echo ======================================
 echo.
 echo 1. Upload the following files from export folder to Linux server:
-echo    - bilibili-history-server-%TIMESTAMP%.tar  (image archive)
+echo    - online-video-history-server-%TIMESTAMP%.tar  (image archive)
 echo    - import_image.sh                          (import script)
 echo    - docker-compose.yml                       (compose config)
 echo    - config-example.json                      (config template)
