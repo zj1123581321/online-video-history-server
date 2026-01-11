@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bilibili 无限历史记录</title>
+    <title>视频历史记录</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
         .history-item {
@@ -33,13 +33,16 @@
 <body class="bg-gray-100 min-h-screen">
     <div class="max-w-7xl mx-auto px-2 sm:px-4 py-8">
         <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-8 gap-4">
-            <h1 class="text-3xl font-extrabold text-pink-500 tracking-tight">Bilibili 无限历史记录</h1>
+            <h1 class="text-3xl font-extrabold text-blue-600 tracking-tight">视频历史记录</h1>
             <div class="flex gap-2 flex-wrap items-center">
+                <select id="platformSelect" class="px-3 py-2 border rounded focus:outline-none focus:border-blue-500 text-sm bg-white">
+                    <option value="all">全部平台</option>
+                </select>
                 <button id="datePrev" class="px-2 py-1 border rounded bg-gray-50 hover:bg-gray-100 text-gray-500 text-sm">-</button>
                 <input type="date" id="dateInput" class="px-3 py-2 border rounded focus:outline-none focus:border-blue-500 text-sm">
                 <button id="dateNext" class="px-2 py-1 border rounded bg-gray-50 hover:bg-gray-100 text-gray-500 text-sm">+</button>
                 <div class="relative" style="width: 160px;">
-                    <input type="text" id="authorInput" placeholder="搜索UP主..." class="px-3 py-2 border rounded focus:outline-none focus:border-blue-500 text-sm w-full pr-8">
+                    <input type="text" id="authorInput" placeholder="搜索作者..." class="px-3 py-2 border rounded focus:outline-none focus:border-blue-500 text-sm w-full pr-8">
                     <button id="clearAuthor" class="absolute right-2 top-2 -translate-y-1/2 text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full p-1 transition-colors hidden" tabindex="-1">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
@@ -140,7 +143,15 @@
         let currentKeyword = '';
         let currentAuthor = '';
         let currentDate = '';
+        let currentPlatform = 'all';
+        let enabledPlatforms = [];
         const DEFAULT_COVER = 'https://static.hdslb.com/images/akari.jpg';
+
+        // 平台配置：名称和颜色
+        const PLATFORM_CONFIG = {
+            bilibili: { name: 'Bilibili', color: 'bg-pink-500', textColor: 'text-pink-500' },
+            youtube: { name: 'YouTube', color: 'bg-red-500', textColor: 'text-red-500' }
+        };
 
         // ==================== 认证模块 ====================
         const AUTH_TOKEN_KEY = 'authToken';
@@ -353,11 +364,43 @@
             }
         }
 
+        /**
+         * 获取已启用的平台列表并更新下拉框
+         */
+        async function fetchPlatforms() {
+            try {
+                const response = await authFetch('/api/platforms');
+                const data = await response.json();
+                enabledPlatforms = data.platforms || [];
+                updatePlatformSelect();
+            } catch (error) {
+                console.error('获取平台列表失败:', error);
+            }
+        }
+
+        /**
+         * 更新平台选择下拉框
+         */
+        function updatePlatformSelect() {
+            const select = document.getElementById('platformSelect');
+            // 保留 "全部平台" 选项
+            select.innerHTML = '<option value="all">全部平台</option>';
+            // 添加各平台选项
+            enabledPlatforms.forEach(platform => {
+                const config = PLATFORM_CONFIG[platform] || { name: platform };
+                const option = document.createElement('option');
+                option.value = platform;
+                option.textContent = config.name;
+                select.appendChild(option);
+            });
+        }
+
         // 页面初始化
         async function initApp() {
             const authed = await checkAuthStatus();
             if (authed) {
                 fetchSyncInterval();
+                fetchPlatforms();
                 loadHistory();
             }
         }
@@ -376,15 +419,20 @@
             isLoading = true;
             document.getElementById('loading').classList.remove('hidden');
             try {
-                const response = await authFetch(`/api/history?page=${currentPage}&pageSize=20&keyword=${currentKeyword}&authorKeyword=${currentAuthor}&date=${currentDate}`);
+                const response = await authFetch(`/api/history?page=${currentPage}&pageSize=20&keyword=${currentKeyword}&authorKeyword=${currentAuthor}&date=${currentDate}&platform=${currentPlatform}`);
                 const data = await response.json();
                 const historyList = document.getElementById('historyList');
                 data.items.forEach(item => {
                     const card = document.createElement('div');
                     card.className = 'history-item bg-white rounded-xl shadow-md flex flex-col overflow-hidden';
+                    // 处理封面图片URL（根据平台不同可能需要不同处理）
+                    const coverUrl = item.cover
+                        ? (item.platform === 'bilibili' ? item.cover + '@760w_428h_1c.avif' : item.cover)
+                        : DEFAULT_COVER;
                     card.innerHTML = `
-                        <a href="${getContentUrl(item)}" target="_blank" class="block">
-                            <img src="/img-proxy?url=${encodeURIComponent(item.cover ? item.cover + '@760w_428h_1c.avif' : DEFAULT_COVER)}" alt="${item.title}" class="cover-img">
+                        <a href="${getContentUrl(item)}" target="_blank" class="block relative">
+                            <img src="/img-proxy?url=${encodeURIComponent(coverUrl)}" alt="${item.title}" class="cover-img">
+                            <div class="absolute top-2 left-2">${getPlatformBadge(item.platform)}</div>
                             <div class="p-4 flex flex-col gap-2">
                                 <div class="flex items-start justify-between gap-2">
                                     <h3 class="text-base font-bold line-clamp-2 leading-snug flex-1">${item.title}</h3>
@@ -393,7 +441,7 @@
                                     </button>
                                 </div>
                                 <div class="flex justify-between items-center text-xs text-gray-500">
-                                    <span class="hover:text-pink-500 cursor-pointer" onclick="event.preventDefault(); window.open('https://space.bilibili.com/${item.author_mid}', '_blank')">${item.author_name}</span>
+                                    <span class="hover:text-blue-500 cursor-pointer" onclick="event.preventDefault(); window.open('${getAuthorUrl(item)}', '_blank')">${item.author_name}</span>
                                     <span>${new Date(item.viewTime * 1000).toLocaleString()}</span>
                                 </div>
                             </div>
@@ -453,8 +501,16 @@
             }
         }
 
-        // 获取内容URL
+        /**
+         * 获取内容URL（支持多平台）
+         */
         function getContentUrl(item) {
+            // 根据平台返回对应的内容链接
+            if (item.platform === 'youtube') {
+                // YouTube 视频链接
+                return item.uri || `https://www.youtube.com/watch?v=${item.bvid}`;
+            }
+            // Bilibili 及默认处理
             switch (item.business) {
                 case 'archive':
                     return `https://www.bilibili.com/video/${item.bvid}`;
@@ -471,6 +527,26 @@
                 default:
                     return `https://www.bilibili.com/video/${item.bvid}`;
             }
+        }
+
+        /**
+         * 获取作者主页链接（支持多平台）
+         */
+        function getAuthorUrl(item) {
+            if (item.platform === 'youtube') {
+                // YouTube 频道链接
+                return item.author_mid ? `https://www.youtube.com/channel/${item.author_mid}` : '#';
+            }
+            // Bilibili UP主空间
+            return `https://space.bilibili.com/${item.author_mid}`;
+        }
+
+        /**
+         * 获取平台标识HTML
+         */
+        function getPlatformBadge(platform) {
+            const config = PLATFORM_CONFIG[platform] || { name: platform, color: 'bg-gray-500' };
+            return `<span class="inline-block px-1.5 py-0.5 text-xs text-white rounded ${config.color}">${config.name}</span>`;
         }
 
         // 监听滚动加载
@@ -493,6 +569,11 @@
         }, 500));
         document.getElementById('dateInput').addEventListener('change', (e) => {
             currentDate = e.target.value;
+            loadHistory(true);
+        });
+        // 监听平台选择
+        document.getElementById('platformSelect').addEventListener('change', (e) => {
+            currentPlatform = e.target.value;
             loadHistory(true);
         });
         document.getElementById('syncBtn').addEventListener('click', syncHistory);
@@ -556,7 +637,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `bilibili-history-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `video-history-${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
