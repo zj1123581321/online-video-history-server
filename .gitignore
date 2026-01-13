@@ -45,3 +45,6 @@ CLAUDE.md
 
 # 依赖锁定文件
 package-lock.json 
+
+# Claude Code 临时目录
+tmpclaude-*
