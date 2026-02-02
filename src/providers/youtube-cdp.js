@@ -201,6 +201,7 @@ export class YouTubeCDPProvider extends BaseProvider {
   /**
    * 解析日期字符串为时间戳
    * 支持格式：
+   * - "Today", "Yesterday" 相对日期
    * - "Thursday", "Friday" 等星期格式
    * - "Jan 26", "Feb 11" 等月+日格式（默认当年）
    * - "Dec 15, 2025", "Feb 11, 2025" 等完整日期格式
@@ -221,6 +222,22 @@ export class YouTubeCDPProvider extends BaseProvider {
     };
 
     try {
+      // 格式 0: "Today", "Yesterday" (相对日期)
+      const lowerDateStr = dateStr.trim().toLowerCase();
+      if (lowerDateStr === 'today') {
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        const utcTimestamp = today.getTime() - (this.timezoneOffset * 3600000);
+        return Math.floor(utcTimestamp / 1000);
+      }
+      if (lowerDateStr === 'yesterday') {
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        yesterday.setHours(0, 0, 0, 0);
+        const utcTimestamp = yesterday.getTime() - (this.timezoneOffset * 3600000);
+        return Math.floor(utcTimestamp / 1000);
+      }
+
       // 格式 1: "Dec 15, 2025" (完整日期)
       const fullDateMatch = dateStr.match(/^([A-Z][a-z]{2})\s+(\d{1,2}),\s+(\d{4})$/);
       if (fullDateMatch) {
