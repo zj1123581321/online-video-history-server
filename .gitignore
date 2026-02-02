@@ -9,6 +9,7 @@ data/*.db-wal
 data/*.db-shm
 data/cookie_cache.json
 data/youtube_sync_state.json
+data/youtube_cdp_sync_state.json
 data/tmp_*_cookie.txt
 
 # 依赖目录
