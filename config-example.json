@@ -18,6 +18,17 @@
       "enabled": false,
       "syncInterval": 43200000,
       "firstSyncCount": 100
+    },
+    "youtube-cdp": {
+      "enabled": false,
+      "timezoneOffset": 8,
+      "cdp": {
+        "host": "localhost",
+        "port": 9222,
+        "maxScrolls": 15,
+        "scrollInterval": 3000,
+        "targetLoadCount": 50
+      }
     }
   },
   "cookiecloud": {

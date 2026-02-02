@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
+    "chrome-remote-interface": "^0.33.3",
     "cors": "^2.8.5",
     "dayjs": "^1.11.10",
     "evp_bytestokey": "^1.0.3",
