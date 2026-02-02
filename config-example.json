@@ -21,6 +21,7 @@
     },
     "youtube-cdp": {
       "enabled": false,
+      "syncInterval": 28800000,
       "timezoneOffset": 8,
       "cdp": {
         "host": "localhost",

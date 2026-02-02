@@ -173,6 +173,30 @@ function startYouTubeAutoSync() {
 }
 startYouTubeAutoSync();
 
+// YouTube-CDP 自动同步定时器
+let youtubeCdpSyncTimer = null;
+function startYouTubeCdpAutoSync() {
+  if (youtubeCdpSyncTimer) clearNodeInterval(youtubeCdpSyncTimer);
+
+  // 检查 YouTube-CDP 是否启用
+  if (!config.providers?.['youtube-cdp']?.enabled) {
+    console.log('[YouTube-CDP] 未启用，跳过自动同步');
+    return;
+  }
+
+  const interval = config.providers['youtube-cdp'].syncInterval || 28800000; // 默认 8 小时
+  youtubeCdpSyncTimer = setNodeInterval(async () => {
+    try {
+      const result = await syncHistory('youtube-cdp');
+      console.log(`[YouTube-CDP] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+    } catch (e) {
+      console.error('[YouTube-CDP] 自动同步失败:', e);
+    }
+  }, interval);
+  console.log(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
+}
+startYouTubeCdpAutoSync();
+
 /**
  * 构建查询历史记录的 SQL
  * @param {object} params 查询参数

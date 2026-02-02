@@ -225,6 +225,7 @@ pip install yt-dlp
   "providers": {
     "youtube-cdp": {
       "enabled": true,
+      "syncInterval": 28800000,
       "timezoneOffset": 8,
       "cdp": {
         "host": "localhost",
@@ -241,6 +242,7 @@ pip install yt-dlp
 | 配置项 | 说明 |
 |--------|------|
 | `providers.youtube-cdp.enabled` | 是否启用 YouTube-CDP 同步 |
+| `providers.youtube-cdp.syncInterval` | 自动同步间隔（毫秒），默认 28800000（8小时） |
 | `providers.youtube-cdp.timezoneOffset` | 时区偏移（小时），用于日期解析，默认 8（UTC+8） |
 | `providers.youtube-cdp.cdp.host` | CDP 服务地址，默认 localhost |
 | `providers.youtube-cdp.cdp.port` | CDP 服务端口，默认 9222 |
