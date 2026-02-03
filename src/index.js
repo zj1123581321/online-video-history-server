@@ -208,6 +208,32 @@ function startYouTubeCdpAutoSync() {
 }
 startYouTubeCdpAutoSync();
 
+// 小宇宙自动同步定时器
+let xiaoyuzhouSyncTimer = null;
+function startXiaoyuzhouAutoSync() {
+  if (xiaoyuzhouSyncTimer) clearNodeInterval(xiaoyuzhouSyncTimer);
+
+  // 检查小宇宙是否启用
+  if (!config.providers?.xiaoyuzhou?.enabled) {
+    logger.info('[Xiaoyuzhou] 未启用，跳过自动同步');
+    return;
+  }
+
+  const interval = config.providers.xiaoyuzhou.syncInterval || 3600000; // 默认 1 小时
+  xiaoyuzhouSyncTimer = setNodeInterval(async () => {
+    try {
+      const result = await syncHistory('xiaoyuzhou');
+      logger.info(`[Xiaoyuzhou] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      notifySyncSuccess({ platform: 'xiaoyuzhou', newCount: result.totalNew, updateCount: result.totalUpdate });
+    } catch (e) {
+      logger.error('[Xiaoyuzhou] 自动同步失败: ' + e.message, e);
+      notifySyncError({ platform: 'xiaoyuzhou', error: e.message, syncType: '自动同步' });
+    }
+  }, interval);
+  logger.info(`[Xiaoyuzhou] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
+}
+startXiaoyuzhouAutoSync();
+
 /**
  * 构建查询历史记录的 SQL
  * @param {object} params 查询参数
@@ -425,6 +451,11 @@ async function gracefulShutdown(signal) {
     clearNodeInterval(youtubeCdpSyncTimer);
     youtubeCdpSyncTimer = null;
     logger.info('[YouTube-CDP] 自动同步定时器已停止');
+  }
+  if (xiaoyuzhouSyncTimer) {
+    clearNodeInterval(xiaoyuzhouSyncTimer);
+    xiaoyuzhouSyncTimer = null;
+    logger.info('[Xiaoyuzhou] 自动同步定时器已停止');
   }
 
   // 关闭 HTTP 服务器
