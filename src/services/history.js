@@ -62,8 +62,24 @@ export function getEnabledProviders() {
 }
 
 /**
+ * 根据 platform 属性值查找对应的 Provider
+ * 因为配置 key（如 'youtube-cdp'）可能与 Provider 的 platform 属性值（如 'youtube'）不同
+ * @param {string} platformValue - platform 属性值（数据库中存储的值）
+ * @returns {object} 匹配的 providers，key 为配置名
+ */
+function getProvidersByPlatformValue(platformValue) {
+  const matched = {};
+  for (const [name, provider] of Object.entries(providers)) {
+    if (provider.platform === platformValue) {
+      matched[name] = provider;
+    }
+  }
+  return matched;
+}
+
+/**
  * 同步历史记录
- * @param {string} [platform] - 可选，指定平台；不传则同步所有已启用平台
+ * @param {string} [platform] - 可选，指定平台（platform 属性值）；不传则同步所有已启用平台
  * @returns {Promise<{results: object, totalNew: number, totalUpdate: number}>}
  */
 export async function syncHistory(platform = null) {
@@ -71,8 +87,9 @@ export async function syncHistory(platform = null) {
   let totalNew = 0;
   let totalUpdate = 0;
 
+  // 根据 platform 值查找对应的 providers
   const targetProviders = platform
-    ? { [platform]: providers[platform] }
+    ? getProvidersByPlatformValue(platform)
     : providers;
 
   for (const [name, provider] of Object.entries(targetProviders)) {
@@ -103,9 +120,15 @@ export async function syncHistory(platform = null) {
  * @returns {Promise<boolean>}
  */
 export async function deleteRemoteHistory(item) {
-  const provider = providers[item.platform];
-  if (!provider) {
+  // 根据 platform 值查找对应的 Provider
+  const matchedProviders = getProvidersByPlatformValue(item.platform);
+  const providerEntries = Object.entries(matchedProviders);
+
+  if (providerEntries.length === 0) {
     throw new Error(`平台 ${item.platform} 未启用`);
   }
+
+  // 使用第一个匹配的 Provider 删除
+  const [, provider] = providerEntries[0];
   return provider.deleteRemote(item);
 }

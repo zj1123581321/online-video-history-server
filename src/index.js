@@ -278,8 +278,13 @@ app.get('/api/history', (req, res) => {
 // 获取已启用的平台列表
 app.get('/api/platforms', (req, res) => {
   const providers = getEnabledProviders();
+  // 返回 Provider 实例的 platform 属性值（用于数据库查询）
+  // 使用 Set 去重（例如 youtube 和 youtube-cdp 都使用 platform='youtube'）
+  const platformSet = new Set(
+    Object.values(providers).map(provider => provider.platform)
+  );
   res.json({
-    platforms: Object.keys(providers)
+    platforms: Array.from(platformSet)
   });
 });
 
