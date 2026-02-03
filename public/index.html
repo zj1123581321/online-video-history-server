@@ -550,7 +550,7 @@
          */
         function getContentUrl(item) {
             // 根据平台返回对应的内容链接
-            if (item.platform === 'youtube') {
+            if (item.platform === 'youtube' || item.platform === 'youtube-cdp') {
                 // YouTube 视频链接
                 return item.uri || `https://www.youtube.com/watch?v=${item.bvid}`;
             }
@@ -577,7 +577,7 @@
          * 获取作者主页链接（支持多平台）
          */
         function getAuthorUrl(item) {
-            if (item.platform === 'youtube') {
+            if (item.platform === 'youtube' || item.platform === 'youtube-cdp') {
                 // YouTube 频道链接
                 return item.author_mid ? `https://www.youtube.com/channel/${item.author_mid}` : '#';
             }

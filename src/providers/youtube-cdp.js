@@ -359,19 +359,18 @@ export class YouTubeCDPProvider extends BaseProvider {
 
     try {
       // 格式 0: "Today", "Yesterday" (相对日期)
+      // 注意：setHours(0,0,0,0) 设置本地时间 00:00:00，getTime() 已返回正确的 UTC 时间戳
       const lowerDateStr = dateStr.trim().toLowerCase();
       if (lowerDateStr === 'today') {
         const today = new Date(now);
         today.setHours(0, 0, 0, 0);
-        const utcTimestamp = today.getTime() - (this.timezoneOffset * 3600000);
-        return Math.floor(utcTimestamp / 1000);
+        return Math.floor(today.getTime() / 1000);
       }
       if (lowerDateStr === 'yesterday') {
         const yesterday = new Date(now);
         yesterday.setDate(now.getDate() - 1);
         yesterday.setHours(0, 0, 0, 0);
-        const utcTimestamp = yesterday.getTime() - (this.timezoneOffset * 3600000);
-        return Math.floor(utcTimestamp / 1000);
+        return Math.floor(yesterday.getTime() / 1000);
       }
 
       // 格式 1: "Dec 15, 2025" (完整日期)
@@ -381,8 +380,7 @@ export class YouTubeCDPProvider extends BaseProvider {
         const monthIndex = monthMap[month];
         if (monthIndex !== undefined) {
           const date = new Date(parseInt(year), monthIndex, parseInt(day), 0, 0, 0, 0);
-          const utcTimestamp = date.getTime() - (this.timezoneOffset * 3600000);
-          return Math.floor(utcTimestamp / 1000);
+          return Math.floor(date.getTime() / 1000);
         }
       }
 
@@ -399,8 +397,7 @@ export class YouTubeCDPProvider extends BaseProvider {
           }
 
           const date = new Date(year, monthIndex, parseInt(day), 0, 0, 0, 0);
-          const utcTimestamp = date.getTime() - (this.timezoneOffset * 3600000);
-          return Math.floor(utcTimestamp / 1000);
+          return Math.floor(date.getTime() / 1000);
         }
       }
 
@@ -419,8 +416,7 @@ export class YouTubeCDPProvider extends BaseProvider {
         targetDate.setDate(now.getDate() - daysAgo);
         targetDate.setHours(0, 0, 0, 0);
 
-        const utcTimestamp = targetDate.getTime() - (this.timezoneOffset * 3600000);
-        return Math.floor(utcTimestamp / 1000);
+        return Math.floor(targetDate.getTime() / 1000);
       }
 
       logger.warn(`[YouTube-CDP] 无法解析日期: "${dateStr}"`);
