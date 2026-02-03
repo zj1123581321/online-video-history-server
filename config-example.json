@@ -35,6 +35,15 @@
         "scrollInterval": 3000,
         "targetLoadCount": 50
       }
+    },
+    "xiaoyuzhou": {
+      "enabled": false,
+      "accessToken": "your-access-token-here",
+      "refreshToken": "your-refresh-token-here",
+      "deviceId": "your-device-id-here",
+      "syncInterval": 3600000,
+      "pageSize": 25,
+      "maxPages": 20
     }
   },
   "cookiecloud": {

@@ -6,6 +6,7 @@
 - **Bilibili**（已实现）
 - **YouTube**（已实现，需配合 yt-dlp）
 - **YouTube-CDP**（实验性，基于 Chrome DevTools Protocol，支持精确时间解析）
+- **小宇宙播客**（已实现，需配置 access token）
 
 本项目参考了 [bilibili-history-wxt](https://github.com/mundane799699/bilibili-history-wxt) 项目的部分实现。
 
@@ -15,7 +16,7 @@
 
 ## 功能特点
 
-- **多平台支持**：可扩展的 Provider 架构，支持 Bilibili 和 YouTube
+- **多平台支持**：可扩展的 Provider 架构，支持 Bilibili、YouTube 和小宇宙播客
 - **自动同步**：定时同步各平台观看历史记录，支持自定义同步间隔
 - **手动同步**：支持手动触发同步操作，可按平台选择
 - **智能搜索**：支持按视频标题、UP主名称、日期、平台等多维度过滤
@@ -39,7 +40,8 @@ bilibili-history-server/
 │   ├── providers/                    # 平台 Provider 模块
 │   │   ├── base.js                   # Provider 基类
 │   │   ├── bilibili.js               # Bilibili 实现
-│   │   └── youtube.js               # YouTube 实现
+│   │   ├── youtube.js                # YouTube 实现
+│   │   └── xiaoyuzhou.js             # 小宇宙播客实现
 │   ├── services/
 │   │   ├── history.js                # 历史记录服务（Provider 调度）
 │   │   └── cookie.js                 # Cookie 服务（CookieCloud 集成）
@@ -54,7 +56,8 @@ bilibili-history-server/
 ├── data/                             # 数据存储目录
 │   ├── history.db                    # SQLite 数据库文件（运行后生成）
 │   ├── cookie_cache.json              # Cookie 缓存文件（CookieCloud 模式）
-│   └── youtube_sync_state.json       # YouTube 同步状态文件
+│   ├── youtube_sync_state.json       # YouTube 同步状态文件
+│   └── xiaoyuzhou_sync_state.json    # 小宇宙同步状态文件
 ├── docker/                           # Docker 相关文件
 │   ├── docker-compose.yml             # 本地开发配置
 │   ├── docker-compose.deploy.yml      # 生产部署配置
@@ -315,6 +318,48 @@ docker run -d -p 9222:9222 \
 **注意**：
 - 这是实验性功能，建议先在测试环境验证
 - 需要占用额外的 Chrome 实例资源
+- 删除远程记录功能暂未实现
+
+#### 小宇宙播客
+
+```json
+{
+  "providers": {
+    "xiaoyuzhou": {
+      "enabled": true,
+      "accessToken": "your-access-token-here",
+      "refreshToken": "your-refresh-token-here",
+      "deviceId": "your-device-id-here",
+      "syncInterval": 3600000,
+      "pageSize": 25,
+      "maxPages": 20
+    }
+  }
+}
+```
+
+| 配置项 | 说明 |
+|--------|------|
+| `providers.xiaoyuzhou.enabled` | 是否启用小宇宙同步 |
+| `providers.xiaoyuzhou.accessToken` | JWT access token（必填） |
+| `providers.xiaoyuzhou.refreshToken` | JWT refresh token（可选） |
+| `providers.xiaoyuzhou.deviceId` | 设备 ID（必填，从请求头获取） |
+| `providers.xiaoyuzhou.syncInterval` | 自动同步间隔（毫秒），默认 3600000（1小时） |
+| `providers.xiaoyuzhou.pageSize` | 每页记录数，默认 25 |
+| `providers.xiaoyuzhou.maxPages` | 首次同步最大页数，默认 20 |
+
+**获取 Token 和设备 ID**：
+
+1. 浏览器访问 https://www.xiaoyuzhoufm.com/ 并登录，或使用手机抓包
+2. 打开开发者工具 (F12) → Network
+3. 找到任意 API 请求（如 `list-history`）
+4. 复制请求头中的：
+   - `x-jike-access-token`
+   - `x-jike-refresh-token`
+   - `x-jike-device-id`
+
+**注意**：
+- 小宇宙 API 不提供精确的播放时间，`view_time` 使用记录同步到本地的时间
 - 删除远程记录功能暂未实现
 
 ### CookieCloud 配置
