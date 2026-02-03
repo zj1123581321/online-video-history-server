@@ -157,7 +157,8 @@
         // 平台配置：名称和颜色
         const PLATFORM_CONFIG = {
             bilibili: { name: 'Bilibili', color: 'bg-pink-500', textColor: 'text-pink-500' },
-            youtube: { name: 'YouTube', color: 'bg-red-500', textColor: 'text-red-500' }
+            youtube: { name: 'YouTube', color: 'bg-red-500', textColor: 'text-red-500' },
+            xiaoyuzhou: { name: '小宇宙', color: 'bg-yellow-500', textColor: 'text-yellow-500' }
         };
 
         // ==================== 认证模块 ====================
@@ -553,6 +554,10 @@
                 // YouTube 视频链接
                 return item.uri || `https://www.youtube.com/watch?v=${item.bvid}`;
             }
+            if (item.platform === 'xiaoyuzhou') {
+                // 小宇宙播客单集链接
+                return item.uri || `https://www.xiaoyuzhoufm.com/episode/${item.id}`;
+            }
             // Bilibili 及默认处理
             switch (item.business) {
                 case 'archive':
@@ -579,6 +584,10 @@
             if (item.platform === 'youtube') {
                 // YouTube 频道链接
                 return item.author_mid ? `https://www.youtube.com/channel/${item.author_mid}` : '#';
+            }
+            if (item.platform === 'xiaoyuzhou') {
+                // 小宇宙播客主页（bvid 存储的是 pid）
+                return item.bvid ? `https://www.xiaoyuzhoufm.com/podcast/${item.bvid}` : '#';
             }
             // Bilibili UP主空间
             return `https://space.bilibili.com/${item.author_mid}`;
