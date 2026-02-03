@@ -1,7 +1,6 @@
 {
   "server": {
     "port": 3000,
-    "syncInterval": 3600000,
     "timezone": 8
   },
   "notification": {
@@ -29,16 +28,17 @@
   "providers": {
     "bilibili": {
       "enabled": true,
+      "syncInterval": 60,
       "cookie": "SESSDATA=your_sessdata_here; bili_jct=your_bili_jct_here"
     },
     "youtube": {
       "enabled": false,
-      "syncInterval": 43200000,
+      "syncInterval": 720,
       "firstSyncCount": 100
     },
     "youtube-cdp": {
       "enabled": false,
-      "syncInterval": 28800000,
+      "syncInterval": 480,
       "timezoneOffset": 8,
       "cdp": {
         "host": "localhost",
@@ -53,7 +53,7 @@
       "accessToken": "your-access-token-here",
       "refreshToken": "your-refresh-token-here",
       "deviceId": "your-device-id-here",
-      "syncInterval": 3600000,
+      "syncInterval": 60,
       "pageSize": 25,
       "maxPages": 20
     }

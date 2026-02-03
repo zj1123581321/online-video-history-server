@@ -63,7 +63,7 @@ function startBilibiliAutoSync() {
     return;
   }
 
-  const interval = config.server.syncInterval || 3600000;
+  const interval = (config.providers?.bilibili?.syncInterval || 60) * 60000;
   bilibiliSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('bilibili');
@@ -74,7 +74,7 @@ function startBilibiliAutoSync() {
       notifySyncError({ platform: 'bilibili', error: e.message, syncType: '自动同步' });
     }
   }, interval);
-  logger.info(`[Bilibili] 自动同步定时器已启动，间隔: ${interval}ms`);
+  logger.info(`[Bilibili] 自动同步定时器已启动，间隔: ${interval / 60000} 分钟`);
 }
 startBilibiliAutoSync();
 
@@ -165,7 +165,7 @@ function startYouTubeAutoSync() {
     return;
   }
 
-  const interval = config.providers.youtube.syncInterval || 43200000; // 默认 12 小时
+  const interval = (config.providers.youtube.syncInterval || 720) * 60000; // 默认 12 小时
   const { delay, displayTime } = getNextYouTubeSyncTime();
 
   logger.info(`[YouTube] 下一次同步时间: ${displayTime}，等待 ${Math.round(delay / 60000)} 分钟`);
@@ -177,7 +177,7 @@ function startYouTubeAutoSync() {
 
     // 然后启动固定间隔的定时器
     youtubeSyncTimer = setNodeInterval(doYouTubeSync, interval);
-    logger.info(`[YouTube] 定时同步已启动，间隔: ${interval}ms`);
+    logger.info(`[YouTube] 定时同步已启动，间隔: ${interval / 60000} 分钟`);
   }, delay);
 }
 startYouTubeAutoSync();
@@ -193,7 +193,7 @@ function startYouTubeCdpAutoSync() {
     return;
   }
 
-  const interval = config.providers['youtube-cdp'].syncInterval || 28800000; // 默认 8 小时
+  const interval = (config.providers['youtube-cdp'].syncInterval || 480) * 60000; // 默认 8 小时
   youtubeCdpSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('youtube-cdp');
@@ -204,7 +204,7 @@ function startYouTubeCdpAutoSync() {
       notifySyncError({ platform: 'youtube-cdp', error: e.message, syncType: '自动同步' });
     }
   }, interval);
-  logger.info(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
+  logger.info(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval / 60000} 分钟`);
 }
 startYouTubeCdpAutoSync();
 
@@ -219,7 +219,7 @@ function startXiaoyuzhouAutoSync() {
     return;
   }
 
-  const interval = config.providers.xiaoyuzhou.syncInterval || 3600000; // 默认 1 小时
+  const interval = (config.providers.xiaoyuzhou.syncInterval || 60) * 60000; // 默认 1 小时
   xiaoyuzhouSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('xiaoyuzhou');
@@ -230,7 +230,7 @@ function startXiaoyuzhouAutoSync() {
       notifySyncError({ platform: 'xiaoyuzhou', error: e.message, syncType: '自动同步' });
     }
   }, interval);
-  logger.info(`[Xiaoyuzhou] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
+  logger.info(`[Xiaoyuzhou] 自动同步定时器已启动，间隔: ${interval / 60000} 分钟`);
 }
 startXiaoyuzhouAutoSync();
 
@@ -393,13 +393,15 @@ app.get('/img-proxy', async (req, res) => {
   }
 });
 
-// 设置自动同步间隔 API
+// 设置自动同步间隔 API（接收分钟值）
 app.post('/api/set-sync-interval', express.json(), (req, res) => {
   const { interval } = req.body;
-  if (!interval || typeof interval !== 'number' || interval < 60000) {
+  if (!interval || typeof interval !== 'number' || interval < 1) {
     return res.status(400).json({ error: '无效的同步间隔，最小1分钟' });
   }
-  config.server.syncInterval = interval;
+  // 确保 providers.bilibili 存在
+  if (!config.providers.bilibili) config.providers.bilibili = {};
+  config.providers.bilibili.syncInterval = interval;
   // 更新 config.json
   const configPath = join(__dirname, '../config.json');
   writeFileSync(configPath, JSON.stringify(config, null, 2));
@@ -407,9 +409,10 @@ app.post('/api/set-sync-interval', express.json(), (req, res) => {
   res.json({ message: '同步间隔已更新', interval });
 });
 
-// 获取当前同步间隔 API
+// 获取当前同步间隔 API（返回分钟值）
 app.get('/api/get-sync-interval', (req, res) => {
-  res.json({ interval: config.server.syncInterval || 3600000 });
+  const interval = config.providers?.bilibili?.syncInterval || 60;
+  res.json({ interval });
 });
 
 // 启动服务器

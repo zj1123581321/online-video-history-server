@@ -361,12 +361,12 @@
             };
         }
 
-        // 从服务器获取当前同步间隔
+        // 从服务器获取当前同步间隔（服务器返回分钟值）
         async function fetchSyncInterval() {
             try {
                 const response = await authFetch('/api/get-sync-interval');
                 const data = await response.json();
-                document.getElementById('intervalInput').value = data.interval / 60000; // 转换为分钟
+                document.getElementById('intervalInput').value = data.interval;
             } catch (error) {
                 console.error('获取同步间隔失败:', error);
             }
@@ -758,7 +758,7 @@
                 const response = await authFetch('/api/set-sync-interval', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ interval: interval * 60000 }) // 转换为毫秒
+                    body: JSON.stringify({ interval }) // 直接发送分钟值
                 });
                 const data = await response.json();
                 if (response.ok) {

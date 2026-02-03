@@ -334,9 +334,13 @@ GET /api/get-sync-interval
 
 ```json
 {
-  "interval": 3600000
+  "interval": 60
 }
 ```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `interval` | number | 同步间隔（分钟） |
 
 #### 设置同步间隔
 
@@ -349,20 +353,20 @@ Content-Type: application/json
 
 ```json
 {
-  "interval": 3600000
+  "interval": 60
 }
 ```
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `interval` | number | 同步间隔（毫秒），最小值 60000（1分钟） |
+| `interval` | number | 同步间隔（分钟），最小值 1 |
 
 **响应示例：**
 
 ```json
 {
   "message": "同步间隔已更新",
-  "interval": 3600000
+  "interval": 60
 }
 ```
 
@@ -570,6 +574,7 @@ class HistoryClient {
 
   /**
    * 设置同步间隔
+   * @param interval 同步间隔（分钟）
    */
   async setSyncInterval(interval: number): Promise<{ message: string; interval: number }> {
     return this.request('/api/set-sync-interval', {
@@ -750,7 +755,7 @@ class HistoryClient:
         设置同步间隔
 
         Args:
-            interval: 同步间隔（毫秒），最小 60000
+            interval: 同步间隔（分钟），最小 1
         """
         return self._request(
             "POST",
@@ -831,11 +836,11 @@ curl http://localhost:3000/api/platforms \
 curl http://localhost:3000/api/get-sync-interval \
   -H "X-Auth-Token: your_password"
 
-# 设置同步间隔（1小时）
+# 设置同步间隔（1小时 = 60分钟）
 curl -X POST http://localhost:3000/api/set-sync-interval \
   -H "X-Auth-Token: your_password" \
   -H "Content-Type: application/json" \
-  -d '{"interval": 3600000}'
+  -d '{"interval": 60}'
 ```
 
 ---

@@ -144,7 +144,6 @@ pip install yt-dlp
 {
   "server": {
     "port": 3000,
-    "syncInterval": 3600000,
     "timezone": 8
   }
 }
@@ -153,7 +152,6 @@ pip install yt-dlp
 | 配置项 | 说明 |
 |--------|------|
 | `server.port` | 服务器端口，默认 3000 |
-| `server.syncInterval` | Bilibili 自动同步间隔（毫秒），默认 3600000（1小时） |
 | `server.timezone` | 时区偏移（小时），如 8 表示 UTC+8，用于 YouTube 同步时间点计算 |
 
 ### 日志配置
@@ -215,6 +213,7 @@ LOG_LEVEL=debug npm run dev
   "providers": {
     "bilibili": {
       "enabled": true,
+      "syncInterval": 60,
       "cookie": "SESSDATA=your_sessdata_here; bili_jct=your_bili_jct_here"
     }
   }
@@ -224,6 +223,7 @@ LOG_LEVEL=debug npm run dev
 | 配置项 | 说明 |
 |--------|------|
 | `providers.bilibili.enabled` | 是否启用 Bilibili 同步 |
+| `providers.bilibili.syncInterval` | 自动同步间隔（分钟），默认 60（1小时） |
 | `providers.bilibili.cookie` | B站登录凭证，需包含 `SESSDATA` 和 `bili_jct` |
 
 #### YouTube
@@ -233,7 +233,7 @@ LOG_LEVEL=debug npm run dev
   "providers": {
     "youtube": {
       "enabled": true,
-      "syncInterval": 43200000,
+      "syncInterval": 720,
       "firstSyncCount": 100
     }
   }
@@ -243,7 +243,7 @@ LOG_LEVEL=debug npm run dev
 | 配置项 | 说明 |
 |--------|------|
 | `providers.youtube.enabled` | 是否启用 YouTube 同步 |
-| `providers.youtube.syncInterval` | 自动同步间隔（毫秒），默认 43200000（12小时） |
+| `providers.youtube.syncInterval` | 自动同步间隔（分钟），默认 720（12小时） |
 | `providers.youtube.firstSyncCount` | 首次同步获取的记录数，默认 100 条 |
 
 **注意**：
@@ -260,7 +260,7 @@ LOG_LEVEL=debug npm run dev
   "providers": {
     "youtube-cdp": {
       "enabled": true,
-      "syncInterval": 28800000,
+      "syncInterval": 480,
       "timezoneOffset": 8,
       "cdp": {
         "host": "localhost",
@@ -277,7 +277,7 @@ LOG_LEVEL=debug npm run dev
 | 配置项 | 说明 |
 |--------|------|
 | `providers.youtube-cdp.enabled` | 是否启用 YouTube-CDP 同步 |
-| `providers.youtube-cdp.syncInterval` | 自动同步间隔（毫秒），默认 28800000（8小时） |
+| `providers.youtube-cdp.syncInterval` | 自动同步间隔（分钟），默认 480（8小时） |
 | `providers.youtube-cdp.timezoneOffset` | 时区偏移（小时），用于日期解析，默认 8（UTC+8） |
 | `providers.youtube-cdp.cdp.host` | CDP 服务地址，默认 localhost |
 | `providers.youtube-cdp.cdp.port` | CDP 服务端口，默认 9222 |
@@ -330,7 +330,7 @@ docker run -d -p 9222:9222 \
       "accessToken": "your-access-token-here",
       "refreshToken": "your-refresh-token-here",
       "deviceId": "your-device-id-here",
-      "syncInterval": 3600000,
+      "syncInterval": 60,
       "pageSize": 25,
       "maxPages": 20
     }
@@ -344,7 +344,7 @@ docker run -d -p 9222:9222 \
 | `providers.xiaoyuzhou.accessToken` | JWT access token（必填） |
 | `providers.xiaoyuzhou.refreshToken` | JWT refresh token（可选） |
 | `providers.xiaoyuzhou.deviceId` | 设备 ID（必填，从请求头获取） |
-| `providers.xiaoyuzhou.syncInterval` | 自动同步间隔（毫秒），默认 3600000（1小时） |
+| `providers.xiaoyuzhou.syncInterval` | 自动同步间隔（分钟），默认 60（1小时） |
 | `providers.xiaoyuzhou.pageSize` | 每页记录数，默认 25 |
 | `providers.xiaoyuzhou.maxPages` | 首次同步最大页数，默认 20 |
 
@@ -553,22 +553,28 @@ DELETE /api/history/:id
 POST /api/set-sync-interval
 
 请求体：
-{ "interval": 3600000 }
+{ "interval": 60 }
 
 响应：
 {
   "message": "同步间隔已更新",
-  "interval": 3600000
+  "interval": 60
 }
 ```
+
+| 参数 | 说明 |
+|------|------|
+| `interval` | 同步间隔（分钟），最小值 1 |
 
 #### 获取同步间隔
 ```
 GET /api/get-sync-interval
 
 响应：
-{ "interval": 3600000 }
+{ "interval": 60 }
 ```
+
+返回值 `interval` 单位为分钟。
 
 #### 图片代理
 ```
