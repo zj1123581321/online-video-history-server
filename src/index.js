@@ -365,7 +365,7 @@ app.post('/api/set-sync-interval', express.json(), (req, res) => {
   // 更新 config.json
   const configPath = join(__dirname, '../config.json');
   writeFileSync(configPath, JSON.stringify(config, null, 2));
-  startAutoSync();
+  startBilibiliAutoSync();
   res.json({ message: '同步间隔已更新', interval });
 });
 
@@ -375,6 +375,66 @@ app.get('/api/get-sync-interval', (req, res) => {
 });
 
 // 启动服务器
-app.listen(config.server.port, () => {
+const server = app.listen(config.server.port, () => {
   logger.info(`服务器运行在 http://localhost:${config.server.port}`);
 });
+
+/**
+ * 优雅退出处理
+ * 清理所有定时器、关闭服务器和数据库连接
+ */
+function gracefulShutdown(signal) {
+  logger.info(`收到 ${signal} 信号，正在关闭服务器...`);
+
+  // 清理所有定时器
+  if (bilibiliSyncTimer) {
+    clearNodeInterval(bilibiliSyncTimer);
+    bilibiliSyncTimer = null;
+    logger.info('[Bilibili] 自动同步定时器已停止');
+  }
+  if (youtubeSyncTimer) {
+    clearNodeInterval(youtubeSyncTimer);
+    youtubeSyncTimer = null;
+    logger.info('[YouTube] 自动同步定时器已停止');
+  }
+  if (youtubeNextSyncTimeout) {
+    clearTimeout(youtubeNextSyncTimeout);
+    youtubeNextSyncTimeout = null;
+    logger.info('[YouTube] 下次同步延时已取消');
+  }
+  if (youtubeCdpSyncTimer) {
+    clearNodeInterval(youtubeCdpSyncTimer);
+    youtubeCdpSyncTimer = null;
+    logger.info('[YouTube-CDP] 自动同步定时器已停止');
+  }
+
+  // 关闭 HTTP 服务器
+  server.close((err) => {
+    if (err) {
+      logger.error('关闭服务器时出错: ' + err.message, err);
+    } else {
+      logger.info('HTTP 服务器已关闭');
+    }
+
+    // 关闭数据库连接
+    try {
+      db.close();
+      logger.info('数据库连接已关闭');
+    } catch (dbErr) {
+      logger.error('关闭数据库时出错: ' + dbErr.message, dbErr);
+    }
+
+    logger.info('服务器已完全停止');
+    process.exit(0);
+  });
+
+  // 设置超时强制退出，防止无限等待
+  setTimeout(() => {
+    logger.warn('优雅退出超时，强制退出');
+    process.exit(1);
+  }, 10000);
+}
+
+// 监听终止信号
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
