@@ -6,6 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import logger from './logger.js';
 
 // 缓存格式版本
 const CACHE_VERSION = 1;
@@ -34,7 +35,7 @@ export class CookieCache {
   load() {
     try {
       if (!fs.existsSync(this.cachePath)) {
-        console.log('[CookieCache] 缓存文件不存在');
+        logger.debug('[CookieCache] 缓存文件不存在');
         return null;
       }
 
@@ -43,13 +44,13 @@ export class CookieCache {
 
       // 检查版本兼容性
       if (data.version !== CACHE_VERSION) {
-        console.log(`[CookieCache] 缓存版本不匹配: ${data.version} !== ${CACHE_VERSION}`);
+        logger.warn(`[CookieCache] 缓存版本不匹配: ${data.version} !== ${CACHE_VERSION}`);
         return null;
       }
 
       return data;
     } catch (err) {
-      console.error(`[CookieCache] 加载缓存失败: ${err.message}`);
+      logger.error(`[CookieCache] 加载缓存失败: ${err.message}`);
       return null;
     }
   }
@@ -74,10 +75,10 @@ export class CookieCache {
       };
 
       fs.writeFileSync(this.cachePath, JSON.stringify(cacheData, null, 2), 'utf8');
-      console.log(`[CookieCache] 缓存已保存: ${this.cachePath}`);
+      logger.debug(`[CookieCache] 缓存已保存: ${this.cachePath}`);
       return true;
     } catch (err) {
-      console.error(`[CookieCache] 保存缓存失败: ${err.message}`);
+      logger.error(`[CookieCache] 保存缓存失败: ${err.message}`);
       return false;
     }
   }
@@ -125,7 +126,7 @@ export class CookieCache {
     const platformCache = this.getPlatformCache(platform);
 
     if (!platformCache) {
-      console.log(`[CookieCache] ${platform} 无缓存`);
+      logger.debug(`[CookieCache] ${platform} 无缓存`);
       return false;
     }
 
@@ -139,7 +140,7 @@ export class CookieCache {
       // 使用默认 TTL
       expireTime = platformCache.cachedAt + DEFAULT_CACHE_TTL - REFRESH_BUFFER_SECONDS;
     } else {
-      console.log(`[CookieCache] ${platform} 缓存缺少时间信息`);
+      logger.warn(`[CookieCache] ${platform} 缓存缺少时间信息`);
       return false;
     }
 
@@ -147,12 +148,12 @@ export class CookieCache {
       const remaining = platformCache.expires
         ? platformCache.expires - currentTime
         : platformCache.cachedAt + DEFAULT_CACHE_TTL - currentTime;
-      console.log(`[CookieCache] ${platform} 缓存已过期或即将过期，剩余 ${remaining} 秒`);
+      logger.debug(`[CookieCache] ${platform} 缓存已过期或即将过期，剩余 ${remaining} 秒`);
       return false;
     }
 
     const remaining = expireTime - currentTime;
-    console.log(`[CookieCache] ${platform} 缓存有效，距离刷新还有 ${remaining} 秒`);
+    logger.debug(`[CookieCache] ${platform} 缓存有效，距离刷新还有 ${remaining} 秒`);
     return true;
   }
 
@@ -169,7 +170,7 @@ export class CookieCache {
     }
 
     delete cache.platforms[platform];
-    console.log(`[CookieCache] ${platform} 缓存已清除`);
+    logger.info(`[CookieCache] ${platform} 缓存已清除`);
     return this.save(cache);
   }
 
@@ -181,11 +182,11 @@ export class CookieCache {
     try {
       if (fs.existsSync(this.cachePath)) {
         fs.unlinkSync(this.cachePath);
-        console.log(`[CookieCache] 所有缓存已清除`);
+        logger.info(`[CookieCache] 所有缓存已清除`);
       }
       return true;
     } catch (err) {
-      console.error(`[CookieCache] 清除缓存失败: ${err.message}`);
+      logger.error(`[CookieCache] 清除缓存失败: ${err.message}`);
       return false;
     }
   }

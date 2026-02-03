@@ -1,6 +1,7 @@
 import { BilibiliProvider } from '../providers/bilibili.js';
 import { YouTubeProvider } from '../providers/youtube.js';
 import { YouTubeCDPProvider } from '../providers/youtube-cdp.js';
+import logger from '../utils/logger.js';
 
 // Provider 注册表
 const providerRegistry = {
@@ -33,9 +34,9 @@ export function initProviders(config) {
       const provider = new ProviderClass(providerConfig);
       if (provider.isEnabled() && provider.validateConfig()) {
         providers[name] = provider;
-        console.log(`[Provider] ${name} 已启用`);
+        logger.info(`[Provider] ${name} 已启用`);
       } else {
-        console.log(`[Provider] ${name} 未启用或配置无效`);
+        logger.info(`[Provider] ${name} 未启用或配置无效`);
       }
     }
   }
@@ -81,14 +82,14 @@ export async function syncHistory(platform = null) {
     }
 
     try {
-      console.log(`[Sync] 开始同步 ${name}...`);
+      logger.info(`[Sync] 开始同步 ${name}...`);
       const result = await provider.sync();
       results[name] = result;
       totalNew += result.newCount;
       totalUpdate += result.updateCount;
-      console.log(`[Sync] ${name} 同步完成: 新增 ${result.newCount}, 更新 ${result.updateCount}`);
+      logger.info(`[Sync] ${name} 同步完成: 新增 ${result.newCount}, 更新 ${result.updateCount}`);
     } catch (error) {
-      console.error(`[Sync] ${name} 同步失败:`, error.message);
+      logger.error(`[Sync] ${name} 同步失败: ${error.message}`, error);
       results[name] = { error: error.message };
     }
   }

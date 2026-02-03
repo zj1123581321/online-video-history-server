@@ -11,6 +11,7 @@ import path from 'path';
 import { BaseProvider } from './base.js';
 import db from '../db/index.js';
 import { getCookieService } from '../services/cookie.js';
+import logger from '../utils/logger.js';
 
 // 同步状态文件路径
 const SYNC_STATE_FILE = './data/youtube_sync_state.json';
@@ -46,12 +47,12 @@ export class YouTubeProvider extends BaseProvider {
     try {
       const cookieService = getCookieService();
       if (!cookieService.isCookieCloudEnabled()) {
-        console.warn('[YouTube] 必须启用 CookieCloud 才能同步历史记录');
+        logger.warn('[YouTube] 必须启用 CookieCloud 才能同步历史记录');
         return false;
       }
       return true;
     } catch {
-      console.warn('[YouTube] CookieService 未初始化');
+      logger.warn('[YouTube] CookieService 未初始化');
       return false;
     }
   }
@@ -67,7 +68,7 @@ export class YouTubeProvider extends BaseProvider {
         return JSON.parse(content);
       }
     } catch (err) {
-      console.warn(`[YouTube] 读取同步状态失败: ${err.message}`);
+      logger.warn(`[YouTube] 读取同步状态失败: ${err.message}`);
     }
     return { lastSyncTime: 0 };
   }
@@ -84,7 +85,7 @@ export class YouTubeProvider extends BaseProvider {
       }
       fs.writeFileSync(SYNC_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
     } catch (err) {
-      console.error(`[YouTube] 保存同步状态失败: ${err.message}`);
+      logger.error(`[YouTube] 保存同步状态失败: ${err.message}`);
     }
   }
 
@@ -110,7 +111,7 @@ export class YouTubeProvider extends BaseProvider {
 
     args.push('https://www.youtube.com/feed/history');
 
-    console.log(`[YouTube] 执行命令: ${args.join(' ')}`);
+    logger.info(`[YouTube] 执行命令: ${args.join(' ')}`);
 
     try {
       const output = execSync(args.join(' '), {
@@ -123,8 +124,8 @@ export class YouTubeProvider extends BaseProvider {
       return data.entries || [];
     } catch (err) {
       if (err.status) {
-        console.error(`[YouTube] yt-dlp 执行失败，退出码: ${err.status}`);
-        console.error(`[YouTube] stderr: ${err.stderr}`);
+        logger.error(`[YouTube] yt-dlp 执行失败，退出码: ${err.status}`);
+        logger.error(`[YouTube] stderr: ${err.stderr}`);
       }
       throw new Error(`yt-dlp 执行失败: ${err.message}`);
     }
@@ -177,20 +178,20 @@ export class YouTubeProvider extends BaseProvider {
     try {
       // 获取 cookie 文件
       cookieFile = await cookieService.getCookieNetscapeFile('youtube');
-      console.log('[YouTube] Cookie 文件已准备');
+      logger.info('[YouTube] Cookie 文件已准备');
 
       // 读取同步状态
       const syncState = this._readSyncState();
       const lastSyncTime = syncState.lastSyncTime || 0;
       const isFirstSync = lastSyncTime === 0;
 
-      console.log(`[YouTube] ${isFirstSync ? '首次同步' : '增量同步'}，上次同步时间: ${lastSyncTime ? new Date(lastSyncTime * 1000).toISOString() : '无'}`);
+      logger.info(`[YouTube] ${isFirstSync ? '首次同步' : '增量同步'}，上次同步时间: ${lastSyncTime ? new Date(lastSyncTime * 1000).toISOString() : '无'}`);
 
       // 获取历史记录
       const limit = isFirstSync ? this.firstSyncCount : null;
       const entries = this._fetchHistory(cookieFile, limit);
 
-      console.log(`[YouTube] 获取到 ${entries.length} 条记录`);
+      logger.info(`[YouTube] 获取到 ${entries.length} 条记录`);
 
       if (entries.length === 0) {
         return { newCount: 0, updateCount: 0 };
@@ -235,7 +236,7 @@ export class YouTubeProvider extends BaseProvider {
         if (existing) {
           // 如果存在且 view_time >= lastSyncTime，说明遇到了上次同步的记录
           if (!isFirstSync && existing.view_time >= lastSyncTime) {
-            console.log(`[YouTube] 遇到上次同步的记录 (${entry.id})，停止同步`);
+            logger.info(`[YouTube] 遇到上次同步的记录 (${entry.id})，停止同步`);
             break;
           }
           // 存在但是更早的记录（重复观看），跳过
@@ -260,7 +261,7 @@ export class YouTubeProvider extends BaseProvider {
         lastSyncAt: new Date().toISOString(),
       });
 
-      console.log(`[YouTube] 同步完成: 新增 ${newCount} 条，跳过 ${skippedCount} 条重复`);
+      logger.info(`[YouTube] 同步完成: 新增 ${newCount} 条，跳过 ${skippedCount} 条重复`);
 
       return { newCount, updateCount: 0 };
     } finally {
@@ -277,7 +278,7 @@ export class YouTubeProvider extends BaseProvider {
    * @returns {Promise<boolean>}
    */
   async deleteRemote(item) {
-    console.log('[YouTube] 删除远程记录功能暂未实现');
+    logger.info('[YouTube] 删除远程记录功能暂未实现');
     return false;
   }
 }

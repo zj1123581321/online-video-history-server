@@ -10,6 +10,7 @@
 import { CookieCloudClient } from '../utils/cookiecloud.js';
 import { CookieCache } from '../utils/cookieCache.js';
 import { writeCookieNetscapeFile, removeCookieFile } from '../utils/cookieNetscape.js';
+import logger from '../utils/logger.js';
 
 // 平台域名映射（默认值）
 const DEFAULT_DOMAINS = {
@@ -37,9 +38,9 @@ export class CookieService {
         uuid: ccConfig.uuid,
         password: ccConfig.password,
       });
-      console.log('[CookieService] CookieCloud 已启用');
+      logger.info('[CookieService] CookieCloud 已启用');
     } else {
-      console.log('[CookieService] CookieCloud 未启用，将使用静态配置');
+      logger.info('[CookieService] CookieCloud 未启用，将使用静态配置');
     }
   }
 
@@ -66,7 +67,7 @@ export class CookieService {
     if (this.cache.isValid(platform)) {
       const cached = this.cache.getPlatformCache(platform);
       if (cached?.cookie) {
-        console.log(`[CookieService] ${platform} 使用缓存的 cookie`);
+        logger.debug(`[CookieService] ${platform} 使用缓存的 cookie`);
         return cached.cookie;
       }
     }
@@ -76,10 +77,10 @@ export class CookieService {
       const cookie = await this._fetchFromCookieCloud(platform);
       return cookie;
     } catch (err) {
-      console.error(`[CookieService] CookieCloud 获取失败: ${err.message}`);
+      logger.error(`[CookieService] CookieCloud 获取失败: ${err.message}`);
 
       // 3. 降级到静态配置
-      console.log(`[CookieService] ${platform} 降级到静态配置`);
+      logger.warn(`[CookieService] ${platform} 降级到静态配置`);
       return this._getStaticCookie(platform);
     }
   }
@@ -92,7 +93,7 @@ export class CookieService {
    */
   async refreshCookie(platform, force = false) {
     if (force) {
-      console.log(`[CookieService] 强制刷新 ${platform} cookie`);
+      logger.info(`[CookieService] 强制刷新 ${platform} cookie`);
       this.cache.invalidate(platform);
     }
 
@@ -130,7 +131,7 @@ export class CookieService {
   async _fetchFromCookieCloud(platform) {
     // 获取目标域名
     const domain = this._getDomain(platform);
-    console.log(`[CookieService] 从 CookieCloud 获取 ${platform} cookie (域名: ${domain})`);
+    logger.info(`[CookieService] 从 CookieCloud 获取 ${platform} cookie (域名: ${domain})`);
 
     // 获取 cookie
     const result = await this.cookieCloudClient.getCookiesForDomain(domain);
@@ -142,7 +143,7 @@ export class CookieService {
       source: 'cookiecloud',
     });
 
-    console.log(`[CookieService] ${platform} cookie 已更新，共 ${result.count} 个`);
+    logger.info(`[CookieService] ${platform} cookie 已更新，共 ${result.count} 个`);
     return result.cookie;
   }
 

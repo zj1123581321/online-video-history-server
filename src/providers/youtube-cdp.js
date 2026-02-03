@@ -11,6 +11,7 @@ import path from 'path';
 import { BaseProvider } from './base.js';
 import db from '../db/index.js';
 import { getCookieService } from '../services/cookie.js';
+import logger from '../utils/logger.js';
 
 // 同步状态文件路径
 const SYNC_STATE_FILE = './data/youtube_cdp_sync_state.json';
@@ -53,17 +54,17 @@ export class YouTubeCDPProvider extends BaseProvider {
    */
   validateConfig() {
     if (!this.enabled) {
-      console.log('[YouTube-CDP] Provider 未启用');
+      logger.info('[YouTube-CDP] Provider 未启用');
       return false;
     }
 
     // 检查 CDP 配置
     if (!this.cdpHost || !this.cdpPort) {
-      console.warn('[YouTube-CDP] CDP 配置不完整，需要 host 和 port');
+      logger.warn('[YouTube-CDP] CDP 配置不完整，需要 host 和 port');
       return false;
     }
 
-    console.log(`[YouTube-CDP] 配置验证通过 (${this.cdpHost}:${this.cdpPort})`);
+    logger.info(`[YouTube-CDP] 配置验证通过 (${this.cdpHost}:${this.cdpPort})`);
     return true;
   }
 
@@ -78,7 +79,7 @@ export class YouTubeCDPProvider extends BaseProvider {
         return JSON.parse(content);
       }
     } catch (err) {
-      console.warn(`[YouTube-CDP] 读取同步状态失败: ${err.message}`);
+      logger.warn(`[YouTube-CDP] 读取同步状态失败: ${err.message}`);
     }
     return { lastSyncTime: 0 };
   }
@@ -95,7 +96,7 @@ export class YouTubeCDPProvider extends BaseProvider {
       }
       fs.writeFileSync(SYNC_STATE_FILE, JSON.stringify(state, null, 2), 'utf-8');
     } catch (err) {
-      console.error(`[YouTube-CDP] 保存同步状态失败: ${err.message}`);
+      logger.error(`[YouTube-CDP] 保存同步状态失败: ${err.message}`);
     }
   }
 
@@ -118,7 +119,7 @@ export class YouTubeCDPProvider extends BaseProvider {
    * 智能滚动加载更多历史记录
    */
   async _scrollToLoadMore(Runtime) {
-    console.log(`[YouTube-CDP] 开始滚动加载历史记录 (目标 ${this.targetLoadCount} 条)...`);
+    logger.info(`[YouTube-CDP] 开始滚动加载历史记录 (目标 ${this.targetLoadCount} 条)...`);
 
     let previousCount = 0;
     let noNewContentCount = 0;
@@ -129,17 +130,17 @@ export class YouTubeCDPProvider extends BaseProvider {
       });
       const currentCount = countResult.result.value;
 
-      console.log(`[YouTube-CDP]   第 ${i + 1}/${this.maxScrolls} 次滚动 - 当前: ${currentCount} 条`);
+      logger.debug(`[YouTube-CDP]   第 ${i + 1}/${this.maxScrolls} 次滚动 - 当前: ${currentCount} 条`);
 
       if (currentCount >= this.targetLoadCount) {
-        console.log(`[YouTube-CDP] ✓ 已达到目标数量`);
+        logger.info(`[YouTube-CDP] ✓ 已达到目标数量`);
         break;
       }
 
       if (currentCount === previousCount) {
         noNewContentCount++;
         if (noNewContentCount >= 2) {
-          console.log('[YouTube-CDP] 连续两次无新内容，停止滚动');
+          logger.info('[YouTube-CDP] 连续两次无新内容，停止滚动');
           break;
         }
       } else {
@@ -155,7 +156,7 @@ export class YouTubeCDPProvider extends BaseProvider {
       await sleep(this.scrollInterval);
     }
 
-    console.log('[YouTube-CDP] 滚动完成');
+    logger.info('[YouTube-CDP] 滚动完成');
   }
 
   /**
@@ -327,11 +328,11 @@ export class YouTubeCDPProvider extends BaseProvider {
         return Math.floor(utcTimestamp / 1000);
       }
 
-      console.warn(`[YouTube-CDP] 无法解析日期: "${dateStr}"`);
+      logger.warn(`[YouTube-CDP] 无法解析日期: "${dateStr}"`);
       return Math.floor(Date.now() / 1000);
 
     } catch (err) {
-      console.error(`[YouTube-CDP] 解析日期失败: "${dateStr}"`, err.message);
+      logger.error(`[YouTube-CDP] 解析日期失败: "${dateStr}" - ${err.message}`);
       return Math.floor(Date.now() / 1000);
     }
   }
@@ -378,32 +379,32 @@ export class YouTubeCDPProvider extends BaseProvider {
     let client = null;
 
     try {
-      console.log(`[YouTube-CDP] 开始同步历史记录`);
-      console.log(`[YouTube-CDP] CDP 服务: ${this.cdpHost}:${this.cdpPort}`);
+      logger.info(`[YouTube-CDP] 开始同步历史记录`);
+      logger.info(`[YouTube-CDP] CDP 服务: ${this.cdpHost}:${this.cdpPort}`);
 
       // 读取同步状态
       const syncState = this._readSyncState();
       const lastSyncTime = syncState.lastSyncTime || 0;
       const isFirstSync = lastSyncTime === 0;
 
-      console.log(`[YouTube-CDP] ${isFirstSync ? '首次同步' : '增量同步'}，上次同步时间: ${lastSyncTime ? new Date(lastSyncTime * 1000).toISOString() : '无'}`);
+      logger.info(`[YouTube-CDP] ${isFirstSync ? '首次同步' : '增量同步'}，上次同步时间: ${lastSyncTime ? new Date(lastSyncTime * 1000).toISOString() : '无'}`);
 
       // 连接到远程 Chrome
-      console.log('[YouTube-CDP] 正在连接到远程 Chrome...');
+      logger.info('[YouTube-CDP] 正在连接到远程 Chrome...');
       client = await CDP({
         host: this.cdpHost,
         port: this.cdpPort,
       });
-      console.log('[YouTube-CDP] ✓ 已连接');
+      logger.info('[YouTube-CDP] ✓ 已连接');
 
       const { Network, Page, Runtime } = client;
       await Promise.all([Network.enable(), Page.enable(), Runtime.enable()]);
 
       // 导航到 YouTube 历史记录页面
-      console.log('[YouTube-CDP] 正在导航到 YouTube 历史记录页面...');
+      logger.info('[YouTube-CDP] 正在导航到 YouTube 历史记录页面...');
       await Page.navigate({ url: 'https://www.youtube.com/feed/history' });
       await Page.loadEventFired();
-      console.log('[YouTube-CDP] ✓ 页面加载完成');
+      logger.info('[YouTube-CDP] ✓ 页面加载完成');
 
       // 等待页面渲染
       await sleep(5000);
@@ -413,9 +414,9 @@ export class YouTubeCDPProvider extends BaseProvider {
       await this._scrollToLoadMore(Runtime);
 
       // 提取数据
-      console.log('[YouTube-CDP] 提取视频和时间信息...');
+      logger.info('[YouTube-CDP] 提取视频和时间信息...');
       const rawItems = await this._extractVideosWithTime(Runtime);
-      console.log(`[YouTube-CDP] ✓ 提取到 ${rawItems.length} 条原始记录`);
+      logger.info(`[YouTube-CDP] ✓ 提取到 ${rawItems.length} 条原始记录`);
 
       if (rawItems.length === 0) {
         return { newCount: 0, updateCount: 0 };
@@ -439,7 +440,7 @@ export class YouTubeCDPProvider extends BaseProvider {
           if (existing) {
             // 增量同步优化：如果遇到上次同步的记录，停止插入
             if (!isFirstSync && existing.view_time >= lastSyncTime) {
-              console.log(`[YouTube-CDP] 遇到上次同步的记录 (${item.id})，停止同步`);
+              logger.info(`[YouTube-CDP] 遇到上次同步的记录 (${item.id})，停止同步`);
               stopped = true;
               break;
             }
@@ -476,17 +477,17 @@ export class YouTubeCDPProvider extends BaseProvider {
       });
 
       const statusMsg = stopped ? '(提前终止)' : '';
-      console.log(`[YouTube-CDP] 同步完成${statusMsg}: 新增 ${newCount} 条，跳过 ${skippedCount} 条重复`);
+      logger.info(`[YouTube-CDP] 同步完成${statusMsg}: 新增 ${newCount} 条，跳过 ${skippedCount} 条重复`);
 
       return { newCount, updateCount: 0 };
 
     } catch (err) {
-      console.error('[YouTube-CDP] 同步失败:', err.message);
+      logger.error('[YouTube-CDP] 同步失败: ' + err.message, err);
       throw err;
     } finally {
       if (client) {
         await client.close();
-        console.log('[YouTube-CDP] ✓ 已断开 CDP 连接');
+        logger.info('[YouTube-CDP] ✓ 已断开 CDP 连接');
       }
     }
   }
@@ -495,7 +496,7 @@ export class YouTubeCDPProvider extends BaseProvider {
    * 删除远程历史记录（暂不实现）
    */
   async deleteRemote(item) {
-    console.log('[YouTube-CDP] 删除远程记录功能暂未实现');
+    logger.info('[YouTube-CDP] 删除远程记录功能暂未实现');
     return false;
   }
 }

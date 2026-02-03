@@ -2,6 +2,7 @@ import fetch from 'node-fetch';
 import { BaseProvider } from './base.js';
 import db from '../db/index.js';
 import { getCookieService } from '../services/cookie.js';
+import logger from '../utils/logger.js';
 
 // Bilibili API 认证相关的错误码
 const AUTH_ERROR_CODES = [
@@ -41,7 +42,7 @@ async function fetchWithRetry(url, options, retries = REQUEST_CONFIG.maxRetries)
     return response;
   } catch (error) {
     if (retries > 0) {
-      console.log(`[Bilibili] 网络请求失败 (${error.message})，${REQUEST_CONFIG.retryDelay / 1000}秒后重试，剩余 ${retries} 次...`);
+      logger.warn(`[Bilibili] 网络请求失败 (${error.message})，${REQUEST_CONFIG.retryDelay / 1000}秒后重试，剩余 ${retries} 次...`);
       await sleep(REQUEST_CONFIG.retryDelay);
       return fetchWithRetry(url, options, retries - 1);
     }
@@ -87,7 +88,7 @@ export class BilibiliProvider extends BaseProvider {
       // CookieService 未初始化，检查静态配置
     }
     if (!this.config.cookie) {
-      console.warn('Bilibili: cookie 未配置');
+      logger.warn('[Bilibili] cookie 未配置');
       return false;
     }
     return true;
@@ -102,7 +103,7 @@ export class BilibiliProvider extends BaseProvider {
     try {
       const cookieService = getCookieService();
       if (forceRefresh) {
-        console.log('[Bilibili] 强制刷新 cookie...');
+        logger.info('[Bilibili] 强制刷新 cookie...');
         return await cookieService.refreshCookie(this.platform, true);
       }
       return await cookieService.getCookie(this.platform);
@@ -191,7 +192,7 @@ export class BilibiliProvider extends BaseProvider {
 
     // 获取 cookie（优先从 CookieCloud 获取）
     const cookie = await this.getCookie();
-    console.log('[Bilibili] 已获取 cookie');
+    logger.info('[Bilibili] 已获取 cookie');
 
     let hasMore = true;
     let max = 0;
@@ -257,13 +258,13 @@ export class BilibiliProvider extends BaseProvider {
           }
 
           // 首次请求遇到认证失败，尝试刷新 cookie 并重试
-          console.log(`[Bilibili] 检测到认证失败 (${data.message})，尝试从云端刷新 cookie...`);
+          logger.warn(`[Bilibili] 检测到认证失败 (${data.message})，尝试从云端刷新 cookie...`);
 
           // 强制刷新 cookie
           await this.getCookie(true);
 
           // 重试同步（标记为重试，避免无限循环）
-          console.log('[Bilibili] 使用新 cookie 重试同步...');
+          logger.info('[Bilibili] 使用新 cookie 重试同步...');
           return this.sync(true);
         }
 
@@ -290,7 +291,7 @@ export class BilibiliProvider extends BaseProvider {
 
         batchInsert(items);
 
-        console.log(`[Bilibili] 同步了 ${data.data.list.length} 条历史记录`);
+        logger.debug(`[Bilibili] 同步了 ${data.data.list.length} 条历史记录`);
 
         const hasNewOrUpdated = newCount > prevNewCount || updateCount > prevUpdateCount;
         if (hasNewOrUpdated) {
@@ -298,7 +299,7 @@ export class BilibiliProvider extends BaseProvider {
         } else {
           noUpdateCount += items.length;  // 累加无新增的记录数
           if (noUpdateCount >= 30) {
-            console.log(`[Bilibili] 连续 ${noUpdateCount} 条无新增，同步结束`);
+            logger.info(`[Bilibili] 连续 ${noUpdateCount} 条无新增，同步结束`);
             break;
           }
         }
@@ -351,13 +352,13 @@ export class BilibiliProvider extends BaseProvider {
         }
 
         // 首次请求遇到认证失败，尝试刷新 cookie 并重试
-        console.log(`[Bilibili] 删除操作检测到认证失败 (${data.message})，尝试从云端刷新 cookie...`);
+        logger.warn(`[Bilibili] 删除操作检测到认证失败 (${data.message})，尝试从云端刷新 cookie...`);
 
         // 强制刷新 cookie
         await this.getCookie(true);
 
         // 重试删除（标记为重试，避免无限循环）
-        console.log('[Bilibili] 使用新 cookie 重试删除...');
+        logger.info('[Bilibili] 使用新 cookie 重试删除...');
         return this.deleteRemote(item, true);
       }
 

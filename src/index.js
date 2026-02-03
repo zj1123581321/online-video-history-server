@@ -9,6 +9,7 @@ import fetch from 'node-fetch';
 import { setInterval as setNodeInterval, clearInterval as clearNodeInterval } from 'timers';
 import db, { initDatabase } from './db/index.js';
 import { createAuthMiddleware, setupAuthRoutes } from './middleware/auth.js';
+import logger from './utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -54,7 +55,7 @@ function startBilibiliAutoSync() {
 
   // 检查 Bilibili 是否启用
   if (!config.providers?.bilibili?.enabled) {
-    console.log('[Bilibili] 未启用，跳过自动同步');
+    logger.info('[Bilibili] 未启用，跳过自动同步');
     return;
   }
 
@@ -62,12 +63,12 @@ function startBilibiliAutoSync() {
   bilibiliSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('bilibili');
-      console.log(`[Bilibili] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      logger.info(`[Bilibili] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
     } catch (e) {
-      console.error('[Bilibili] 自动同步失败:', e);
+      logger.error('[Bilibili] 自动同步失败: ' + e.message, e);
     }
   }, interval);
-  console.log(`[Bilibili] 自动同步定时器已启动，间隔: ${interval}ms`);
+  logger.info(`[Bilibili] 自动同步定时器已启动，间隔: ${interval}ms`);
 }
 startBilibiliAutoSync();
 
@@ -134,11 +135,11 @@ function getNextYouTubeSyncTime() {
  */
 async function doYouTubeSync() {
   try {
-    console.log('[YouTube] 开始自动同步...');
+    logger.info('[YouTube] 开始自动同步...');
     const result = await syncHistory('youtube');
-    console.log(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+    logger.info(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
   } catch (e) {
-    console.error('[YouTube] 自动同步失败:', e);
+    logger.error('[YouTube] 自动同步失败: ' + e.message, e);
   }
 }
 
@@ -152,14 +153,14 @@ function startYouTubeAutoSync() {
 
   // 检查 YouTube 是否启用
   if (!config.providers?.youtube?.enabled) {
-    console.log('[YouTube] 未启用，跳过自动同步');
+    logger.info('[YouTube] 未启用，跳过自动同步');
     return;
   }
 
   const interval = config.providers.youtube.syncInterval || 43200000; // 默认 12 小时
   const { delay, displayTime } = getNextYouTubeSyncTime();
 
-  console.log(`[YouTube] 下一次同步时间: ${displayTime}，等待 ${Math.round(delay / 60000)} 分钟`);
+  logger.info(`[YouTube] 下一次同步时间: ${displayTime}，等待 ${Math.round(delay / 60000)} 分钟`);
 
   // 先设置一个 timeout 到下一个定时点
   youtubeNextSyncTimeout = setTimeout(() => {
@@ -168,7 +169,7 @@ function startYouTubeAutoSync() {
 
     // 然后启动固定间隔的定时器
     youtubeSyncTimer = setNodeInterval(doYouTubeSync, interval);
-    console.log(`[YouTube] 定时同步已启动，间隔: ${interval}ms`);
+    logger.info(`[YouTube] 定时同步已启动，间隔: ${interval}ms`);
   }, delay);
 }
 startYouTubeAutoSync();
@@ -180,7 +181,7 @@ function startYouTubeCdpAutoSync() {
 
   // 检查 YouTube-CDP 是否启用
   if (!config.providers?.['youtube-cdp']?.enabled) {
-    console.log('[YouTube-CDP] 未启用，跳过自动同步');
+    logger.info('[YouTube-CDP] 未启用，跳过自动同步');
     return;
   }
 
@@ -188,12 +189,12 @@ function startYouTubeCdpAutoSync() {
   youtubeCdpSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('youtube-cdp');
-      console.log(`[YouTube-CDP] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      logger.info(`[YouTube-CDP] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
     } catch (e) {
-      console.error('[YouTube-CDP] 自动同步失败:', e);
+      logger.error('[YouTube-CDP] 自动同步失败: ' + e.message, e);
     }
   }, interval);
-  console.log(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
+  logger.info(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
 }
 startYouTubeCdpAutoSync();
 
@@ -269,7 +270,7 @@ app.get('/api/history', (req, res) => {
       hasMore: offset + items.length < total
     });
   } catch (error) {
-    console.error('查询历史记录失败:', error);
+    logger.error('查询历史记录失败: ' + error.message, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -293,7 +294,7 @@ app.post('/api/history/sync', async (req, res) => {
       details: result.results
     });
   } catch (error) {
-    console.error('同步历史记录失败:', error);
+    logger.error('同步历史记录失败: ' + error.message, error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -312,7 +313,7 @@ app.delete('/api/history/:id', async (req, res) => {
     try {
       await deleteRemoteHistory(item);
     } catch (error) {
-      console.warn(`删除远程记录失败 (${item.platform}):`, error.message);
+      logger.warn(`删除远程记录失败 (${item.platform}): ${error.message}`);
       // 继续删除本地记录
     }
 
@@ -321,7 +322,7 @@ app.delete('/api/history/:id', async (req, res) => {
 
     res.json({ success: true, message: '删除成功' });
   } catch (error) {
-    console.error('删除失败:', error);
+    logger.error('删除失败: ' + error.message, error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -370,5 +371,5 @@ app.get('/api/get-sync-interval', (req, res) => {
 
 // 启动服务器
 app.listen(config.server.port, () => {
-  console.log(`服务器运行在 http://localhost:${config.server.port}`);
+  logger.info(`服务器运行在 http://localhost:${config.server.port}`);
 });

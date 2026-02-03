@@ -4,6 +4,11 @@
     "syncInterval": 3600000,
     "timezone": 8
   },
+  "logger": {
+    "level": "info",
+    "file": true,
+    "maxDays": 7
+  },
   "auth": {
     "password": "",
     "maxAttempts": 5,

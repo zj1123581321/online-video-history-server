@@ -7,6 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import logger from './logger.js';
 
 /**
  * 将 cookie 字符串转换为 Netscape 格式
@@ -61,7 +62,7 @@ export async function writeCookieNetscapeFile(cookieString, filePath, domain = '
   }
 
   fs.writeFileSync(filePath, content, 'utf-8');
-  console.log(`[CookieNetscape] Cookie 文件已写入: ${filePath}`);
+  logger.debug(`[CookieNetscape] Cookie 文件已写入: ${filePath}`);
 
   return filePath;
 }
@@ -74,10 +75,10 @@ export function removeCookieFile(filePath) {
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      console.log(`[CookieNetscape] Cookie 文件已删除: ${filePath}`);
+      logger.debug(`[CookieNetscape] Cookie 文件已删除: ${filePath}`);
     }
   } catch (err) {
-    console.warn(`[CookieNetscape] 删除 cookie 文件失败: ${err.message}`);
+    logger.warn(`[CookieNetscape] 删除 cookie 文件失败: ${err.message}`);
   }
 }
 

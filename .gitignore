@@ -24,6 +24,7 @@ node_modules/
 
 # 日志文件
 *.log
+data/logs/
 
 # 环境变量文件
 .env

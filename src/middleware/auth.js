@@ -3,6 +3,8 @@
  * 提供简单的密码认证功能，支持失败次数限制和 IP 锁定
  */
 
+import logger from '../utils/logger.js';
+
 // 存储每个 IP 的失败尝试记录
 // 格式: { ip: { attempts: number, lockedUntil: number | null } }
 const attemptRecords = new Map();
@@ -64,7 +66,7 @@ function recordFailedAttempt(ip, maxAttempts, lockoutDuration) {
 
   if (record.attempts >= maxAttempts) {
     record.lockedUntil = Date.now() + lockoutDuration;
-    console.log(`[Auth] IP ${ip} 已被锁定，锁定时长: ${lockoutDuration / 1000}秒`);
+    logger.warn(`[Auth] IP ${ip} 已被锁定，锁定时长: ${lockoutDuration / 1000}秒`);
     return {
       locked: true,
       remainingAttempts: 0,
@@ -101,11 +103,11 @@ export function createAuthMiddleware(authConfig, whitelist = []) {
 
   // 密码为空则不启用认证
   if (!password) {
-    console.log('[Auth] 未配置密码，认证功能已禁用');
+    logger.info('[Auth] 未配置密码，认证功能已禁用');
     return (req, res, next) => next();
   }
 
-  console.log('[Auth] 认证功能已启用');
+  logger.info('[Auth] 认证功能已启用');
 
   return (req, res, next) => {
     // 检查白名单
@@ -175,7 +177,7 @@ export function setupAuthRoutes(router, authConfig) {
     // 检查是否被锁定
     const lockStatus = checkLockStatus(ip);
     if (lockStatus.locked) {
-      console.log(`[Auth] IP ${ip} 尝试登录但处于锁定状态`);
+      logger.warn(`[Auth] IP ${ip} 尝试登录但处于锁定状态`);
       return res.status(429).json({
         success: false,
         error: '尝试次数过多，请稍后再试',
@@ -195,7 +197,7 @@ export function setupAuthRoutes(router, authConfig) {
     // 验证密码
     if (inputPassword === password) {
       resetAttempts(ip);
-      console.log(`[Auth] IP ${ip} 认证成功`);
+      logger.info(`[Auth] IP ${ip} 认证成功`);
       return res.json({
         success: true,
         message: '认证成功'
@@ -204,7 +206,7 @@ export function setupAuthRoutes(router, authConfig) {
 
     // 密码错误，记录失败
     const attemptResult = recordFailedAttempt(ip, maxAttempts, lockoutDuration);
-    console.log(`[Auth] IP ${ip} 认证失败，剩余尝试次数: ${attemptResult.remainingAttempts}`);
+    logger.warn(`[Auth] IP ${ip} 认证失败，剩余尝试次数: ${attemptResult.remainingAttempts}`);
 
     if (attemptResult.locked) {
       return res.status(429).json({

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync, readFileSync, renameSync } from 'fs';
+import logger from '../utils/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,7 +29,7 @@ function initSchema() {
 
     // 如果 id 是 INTEGER 类型，需要迁移
     if (idCol && idCol.type === 'INTEGER') {
-      console.log('[DB] 检测到旧表结构（id 为 INTEGER），开始迁移...');
+      logger.info('[DB] 检测到旧表结构（id 为 INTEGER），开始迁移...');
       migrateIdToText();
     }
   }
@@ -103,7 +104,7 @@ function migrateIdToText() {
     CREATE INDEX IF NOT EXISTS idx_author ON history(author_name);
   `);
 
-  console.log('[DB] 表结构迁移完成：id 已从 INTEGER 改为 TEXT');
+  logger.info('[DB] 表结构迁移完成：id 已从 INTEGER 改为 TEXT');
 }
 
 /**
@@ -118,17 +119,17 @@ function migrateFromJson() {
   // 检查数据库是否已有数据
   const count = db.prepare('SELECT COUNT(*) as count FROM history').get();
   if (count.count > 0) {
-    console.log('数据库已有数据，跳过迁移');
+    logger.info('[DB] 数据库已有数据，跳过迁移');
     return 0;
   }
 
-  console.log('检测到旧的 JSON 数据文件，开始迁移...');
+  logger.info('[DB] 检测到旧的 JSON 数据文件，开始迁移...');
 
   try {
     const jsonData = JSON.parse(readFileSync(JSON_PATH, 'utf-8'));
 
     if (!Array.isArray(jsonData) || jsonData.length === 0) {
-      console.log('JSON 文件为空或格式不正确，跳过迁移');
+      logger.info('[DB] JSON 文件为空或格式不正确，跳过迁移');
       return 0;
     }
 
@@ -164,12 +165,12 @@ function migrateFromJson() {
     // 备份旧的 JSON 文件
     const backupPath = JSON_PATH + '.bak';
     renameSync(JSON_PATH, backupPath);
-    console.log(`迁移完成，共迁移 ${jsonData.length} 条记录`);
-    console.log(`原 JSON 文件已备份为: ${backupPath}`);
+    logger.info(`[DB] 迁移完成，共迁移 ${jsonData.length} 条记录`);
+    logger.info(`[DB] 原 JSON 文件已备份为: ${backupPath}`);
 
     return jsonData.length;
   } catch (error) {
-    console.error('迁移失败:', error);
+    logger.error('[DB] 迁移失败: ' + error.message, error);
     return 0;
   }
 }
@@ -179,7 +180,7 @@ function migrateFromJson() {
  */
 export function initDatabase() {
   migrateFromJson();
-  console.log('数据库初始化完成');
+  logger.info('[DB] 数据库初始化完成');
 }
 
 // 模块加载时立即创建表结构，确保其他模块导入 db 时表已存在

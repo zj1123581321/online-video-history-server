@@ -153,6 +153,38 @@ pip install yt-dlp
 | `server.syncInterval` | Bilibili 自动同步间隔（毫秒），默认 3600000（1小时） |
 | `server.timezone` | 时区偏移（小时），如 8 表示 UTC+8，用于 YouTube 同步时间点计算 |
 
+### 日志配置
+
+```json
+{
+  "logger": {
+    "level": "info",
+    "file": true,
+    "maxDays": 7
+  }
+}
+```
+
+| 配置项 | 说明 |
+|--------|------|
+| `logger.level` | 日志级别：debug/info/warn/error，默认 info |
+| `logger.file` | 是否写入日志文件，默认 true |
+| `logger.maxDays` | 日志文件保留天数，默认 7 |
+
+**日志文件位置**：
+- `data/logs/app-YYYY-MM-DD.log` - 全量日志
+- `data/logs/error-YYYY-MM-DD.log` - 错误日志（单独记录）
+
+**环境变量覆盖**（优先级高于配置文件）：
+- `LOG_LEVEL` - 日志级别
+- `LOG_TO_FILE` - 是否写入文件（true/false）
+- `LOG_MAX_DAYS` - 日志保留天数
+
+示例：
+```bash
+LOG_LEVEL=debug npm run dev
+```
+
 ### 认证配置
 
 ```json

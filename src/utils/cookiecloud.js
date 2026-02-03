@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import https from 'https';
 import fetch from 'node-fetch';
 import EVP_BytesToKey from 'evp_bytestokey';
+import logger from './logger.js';
 
 // 创建忽略 SSL 证书验证的 agent
 const httpsAgent = new https.Agent({
@@ -88,7 +89,7 @@ export class CookieCloudClient {
     }
 
     const apiUrl = `${this.url}/get/${this.uuid}`;
-    console.log(`[CookieCloud] 正在从 ${this.url} 获取数据...`);
+    logger.info(`[CookieCloud] 正在从 ${this.url} 获取数据...`);
 
     // 使用忽略 SSL 验证的 agent（支持自签名证书）
     const response = await fetch(apiUrl, {
@@ -112,7 +113,7 @@ export class CookieCloudClient {
 
     // 解密数据
     const decrypted = this._decrypt(data.encrypted);
-    console.log(`[CookieCloud] 获取成功，包含 ${Object.keys(decrypted.cookie_data || {}).length} 个域名的 cookie`);
+    logger.info(`[CookieCloud] 获取成功，包含 ${Object.keys(decrypted.cookie_data || {}).length} 个域名的 cookie`);
 
     return decrypted;
   }
@@ -134,7 +135,7 @@ export class CookieCloudClient {
       throw new Error(`未找到域名 "${domain}" 的 cookie，可用域名: ${availableDomains.join(', ')}`);
     }
 
-    console.log(`[CookieCloud] 找到 ${cookies.length} 个匹配的 cookie`);
+    logger.debug(`[CookieCloud] 找到 ${cookies.length} 个匹配的 cookie`);
 
     // 构建 cookie 字符串
     const cookieString = this._buildCookieString(cookies);
@@ -158,7 +159,7 @@ export class CookieCloudClient {
   _findDomainCookies(cookieData, targetDomain) {
     // 1. 精确匹配
     if (cookieData[targetDomain]) {
-      console.log(`[CookieCloud] 精确匹配域名: ${targetDomain}`);
+      logger.debug(`[CookieCloud] 精确匹配域名: ${targetDomain}`);
       return cookieData[targetDomain];
     }
 
@@ -171,14 +172,14 @@ export class CookieCloudClient {
     }
 
     if (cookieData[variant]) {
-      console.log(`[CookieCloud] 变体匹配域名: ${variant}`);
+      logger.debug(`[CookieCloud] 变体匹配域名: ${variant}`);
       return cookieData[variant];
     }
 
     // 3. 尝试子域名匹配
     for (const domain of Object.keys(cookieData)) {
       if (domain.endsWith(targetDomain) || targetDomain.endsWith(domain)) {
-        console.log(`[CookieCloud] 子域名匹配: ${domain}`);
+        logger.debug(`[CookieCloud] 子域名匹配: ${domain}`);
         return cookieData[domain];
       }
     }
