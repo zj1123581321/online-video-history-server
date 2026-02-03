@@ -157,8 +157,7 @@
         // 平台配置：名称和颜色
         const PLATFORM_CONFIG = {
             bilibili: { name: 'Bilibili', color: 'bg-pink-500', textColor: 'text-pink-500' },
-            youtube: { name: 'YouTube', color: 'bg-red-500', textColor: 'text-red-500' },
-            'youtube-cdp': { name: 'YouTube', color: 'bg-red-500', textColor: 'text-red-500' }
+            youtube: { name: 'YouTube', color: 'bg-red-500', textColor: 'text-red-500' }
         };
 
         // ==================== 认证模块 ====================
@@ -550,7 +549,7 @@
          */
         function getContentUrl(item) {
             // 根据平台返回对应的内容链接
-            if (item.platform === 'youtube' || item.platform === 'youtube-cdp') {
+            if (item.platform === 'youtube') {
                 // YouTube 视频链接
                 return item.uri || `https://www.youtube.com/watch?v=${item.bvid}`;
             }
@@ -577,7 +576,7 @@
          * 获取作者主页链接（支持多平台）
          */
         function getAuthorUrl(item) {
-            if (item.platform === 'youtube' || item.platform === 'youtube-cdp') {
+            if (item.platform === 'youtube') {
                 // YouTube 频道链接
                 return item.author_mid ? `https://www.youtube.com/channel/${item.author_mid}` : '#';
             }

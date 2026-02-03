@@ -37,7 +37,8 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 export class YouTubeCDPProvider extends BaseProvider {
   constructor(config) {
     super(config);
-    this.platform = 'youtube-cdp';
+    // 存储到数据库的 platform 统一为 'youtube'，因为对用户来说都是 YouTube 视频
+    this.platform = 'youtube';
     // 清理 host 配置，移除可能误配置的协议前缀
     let host = config?.cdp?.host || 'localhost';
     host = host.replace(/^https?:\/\//, '');
