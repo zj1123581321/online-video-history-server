@@ -10,6 +10,7 @@ import { setInterval as setNodeInterval, clearInterval as clearNodeInterval } fr
 import db, { initDatabase } from './db/index.js';
 import { createAuthMiddleware, setupAuthRoutes } from './middleware/auth.js';
 import logger from './utils/logger.js';
+import { initNotificationService, notifyServerStart, notifyServerStop, notifySyncError, notifySyncSuccess } from './services/notification.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -25,6 +26,9 @@ initCookieService(config);
 
 // 初始化 Providers
 initProviders(config);
+
+// 初始化通知服务
+initNotificationService(config.notification, config.server?.timezone ?? 8);
 
 // 中间件
 app.use(cors());
@@ -64,8 +68,10 @@ function startBilibiliAutoSync() {
     try {
       const result = await syncHistory('bilibili');
       logger.info(`[Bilibili] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      notifySyncSuccess({ platform: 'bilibili', newCount: result.totalNew, updateCount: result.totalUpdate });
     } catch (e) {
       logger.error('[Bilibili] 自动同步失败: ' + e.message, e);
+      notifySyncError({ platform: 'bilibili', error: e.message, syncType: '自动同步' });
     }
   }, interval);
   logger.info(`[Bilibili] 自动同步定时器已启动，间隔: ${interval}ms`);
@@ -138,8 +144,10 @@ async function doYouTubeSync() {
     logger.info('[YouTube] 开始自动同步...');
     const result = await syncHistory('youtube');
     logger.info(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+    notifySyncSuccess({ platform: 'youtube', newCount: result.totalNew, updateCount: result.totalUpdate });
   } catch (e) {
     logger.error('[YouTube] 自动同步失败: ' + e.message, e);
+    notifySyncError({ platform: 'youtube', error: e.message, syncType: '自动同步' });
   }
 }
 
@@ -190,8 +198,10 @@ function startYouTubeCdpAutoSync() {
     try {
       const result = await syncHistory('youtube-cdp');
       logger.info(`[YouTube-CDP] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      notifySyncSuccess({ platform: 'youtube-cdp', newCount: result.totalNew, updateCount: result.totalUpdate });
     } catch (e) {
       logger.error('[YouTube-CDP] 自动同步失败: ' + e.message, e);
+      notifySyncError({ platform: 'youtube-cdp', error: e.message, syncType: '自动同步' });
     }
   }, interval);
   logger.info(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval}ms (${interval / 3600000} 小时)`);
@@ -300,6 +310,8 @@ app.post('/api/history/sync', async (req, res) => {
     });
   } catch (error) {
     logger.error('同步历史记录失败: ' + error.message, error);
+    const platformName = req.body?.platform || '所有平台';
+    notifySyncError({ platform: platformName, error: error.message, syncType: '手动同步' });
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -377,14 +389,21 @@ app.get('/api/get-sync-interval', (req, res) => {
 // 启动服务器
 const server = app.listen(config.server.port, () => {
   logger.info(`服务器运行在 http://localhost:${config.server.port}`);
+
+  // 发送启动通知
+  const enabledProviders = Object.keys(getEnabledProviders());
+  notifyServerStart({ port: config.server.port, enabledProviders });
 });
 
 /**
  * 优雅退出处理
  * 清理所有定时器、关闭服务器和数据库连接
  */
-function gracefulShutdown(signal) {
+async function gracefulShutdown(signal) {
   logger.info(`收到 ${signal} 信号，正在关闭服务器...`);
+
+  // 发送停止通知（不等待完成，避免阻塞退出流程）
+  notifyServerStop({ signal }).catch(() => {});
 
   // 清理所有定时器
   if (bilibiliSyncTimer) {

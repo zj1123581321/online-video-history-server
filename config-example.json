@@ -4,6 +4,18 @@
     "syncInterval": 3600000,
     "timezone": 8
   },
+  "notification": {
+    "enabled": false,
+    "wecom": {
+      "webhookUrl": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key-here"
+    },
+    "events": {
+      "serverStart": true,
+      "serverStop": true,
+      "syncSuccess": true,
+      "syncError": true
+    }
+  },
   "logger": {
     "level": "info",
     "file": true,
