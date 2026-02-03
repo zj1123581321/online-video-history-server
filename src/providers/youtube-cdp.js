@@ -37,7 +37,10 @@ export class YouTubeCDPProvider extends BaseProvider {
   constructor(config) {
     super(config);
     this.platform = 'youtube';
-    this.cdpHost = config?.cdp?.host || 'localhost';
+    // 清理 host 配置，移除可能误配置的协议前缀
+    let host = config?.cdp?.host || 'localhost';
+    host = host.replace(/^https?:\/\//, '');
+    this.cdpHost = host;
     this.cdpPort = config?.cdp?.port || 9222;
     this.maxScrolls = config?.cdp?.maxScrolls || 15;
     this.scrollInterval = config?.cdp?.scrollInterval || 3000;
