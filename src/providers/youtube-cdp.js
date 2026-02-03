@@ -37,7 +37,7 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 export class YouTubeCDPProvider extends BaseProvider {
   constructor(config) {
     super(config);
-    this.platform = 'youtube';
+    this.platform = 'youtube-cdp';
     // 清理 host 配置，移除可能误配置的协议前缀
     let host = config?.cdp?.host || 'localhost';
     host = host.replace(/^https?:\/\//, '');
@@ -116,6 +116,39 @@ export class YouTubeCDPProvider extends BaseProvider {
   }
 
   /**
+   * 等待新内容加载完成
+   * @param {object} Runtime - CDP Runtime
+   * @param {number} previousCount - 滚动前的视频数量
+   * @param {number} timeout - 超时时间（毫秒）
+   * @returns {Promise<number>} 当前视频数量
+   */
+  async _waitForNewContent(Runtime, previousCount, timeout = 10000) {
+    const startTime = Date.now();
+    const checkInterval = 500;
+
+    while (Date.now() - startTime < timeout) {
+      const countResult = await Runtime.evaluate({
+        expression: 'document.querySelectorAll("ytd-video-renderer").length',
+      });
+      const currentCount = countResult.result.value;
+
+      if (currentCount > previousCount) {
+        // 新内容已加载，再等待一小段时间确保渲染完成
+        await sleep(500);
+        return currentCount;
+      }
+
+      await sleep(checkInterval);
+    }
+
+    // 超时，返回当前数量
+    const finalResult = await Runtime.evaluate({
+      expression: 'document.querySelectorAll("ytd-video-renderer").length',
+    });
+    return finalResult.result.value;
+  }
+
+  /**
    * 智能滚动加载更多历史记录
    */
   async _scrollToLoadMore(Runtime) {
@@ -124,45 +157,55 @@ export class YouTubeCDPProvider extends BaseProvider {
     let previousCount = 0;
     let noNewContentCount = 0;
 
+    // 获取初始数量
+    const initialResult = await Runtime.evaluate({
+      expression: 'document.querySelectorAll("ytd-video-renderer").length',
+    });
+    previousCount = initialResult.result.value;
+    logger.info(`[YouTube-CDP] 初始视频数量: ${previousCount}`);
+
     for (let i = 0; i < this.maxScrolls; i++) {
-      const countResult = await Runtime.evaluate({
-        expression: 'document.querySelectorAll("ytd-video-renderer").length',
-      });
-      const currentCount = countResult.result.value;
-
-      logger.debug(`[YouTube-CDP]   第 ${i + 1}/${this.maxScrolls} 次滚动 - 当前: ${currentCount} 条`);
-
-      if (currentCount >= this.targetLoadCount) {
-        logger.info(`[YouTube-CDP] ✓ 已达到目标数量`);
+      if (previousCount >= this.targetLoadCount) {
+        logger.info(`[YouTube-CDP] ✓ 已达到目标数量 (${previousCount})`);
         break;
       }
 
+      // 执行滚动（每次滚动当前文档高度的 30%，确保触发懒加载）
+      await Runtime.evaluate({
+        expression: 'window.scrollBy(0, document.documentElement.scrollHeight * 0.3)',
+      });
+
+      // 等待新内容加载
+      const currentCount = await this._waitForNewContent(Runtime, previousCount, this.scrollInterval * 3);
+
+      logger.info(`[YouTube-CDP]   第 ${i + 1}/${this.maxScrolls} 次滚动 - ${previousCount} → ${currentCount} 条`);
+
       if (currentCount === previousCount) {
         noNewContentCount++;
-        if (noNewContentCount >= 2) {
-          logger.info('[YouTube-CDP] 连续两次无新内容，停止滚动');
+        if (noNewContentCount >= 3) {
+          logger.info('[YouTube-CDP] 连续三次无新内容，停止滚动');
           break;
         }
+        // 无新内容时额外等待
+        await sleep(this.scrollInterval);
       } else {
         noNewContentCount = 0;
       }
 
       previousCount = currentCount;
-
-      await Runtime.evaluate({
-        expression: 'window.scrollTo(0, document.documentElement.scrollHeight)',
-      });
-
-      await sleep(this.scrollInterval);
     }
 
-    logger.info('[YouTube-CDP] 滚动完成');
+    logger.info(`[YouTube-CDP] 滚动完成，共加载 ${previousCount} 条记录`);
   }
 
   /**
    * 从页面提取视频和时间信息
+   * 支持新旧两种 YouTube 页面元素：
+   * - 旧元素: ytd-video-renderer
+   * - 新元素: yt-lockup-view-model
    */
   async _extractVideosWithTime(Runtime) {
+    // 提取视频详情（同时支持新旧两种元素）
     const result = await Runtime.evaluate({
       expression: `
         (() => {
@@ -178,12 +221,10 @@ export class YouTubeCDPProvider extends BaseProvider {
               dateText = titleElement?.textContent?.trim() || '';
             }
 
-            // 提取该 section 下的所有视频
+            // 方式1: 旧元素 ytd-video-renderer
             const videoRenderers = section.querySelectorAll('ytd-video-renderer');
-
             videoRenderers.forEach((renderer) => {
               try {
-                // 视频标题和链接
                 const titleElement =
                   renderer.querySelector('#video-title') ||
                   renderer.querySelector('a#video-title-link');
@@ -191,7 +232,6 @@ export class YouTubeCDPProvider extends BaseProvider {
                 const title = titleElement?.textContent?.trim() || '';
                 const url = titleElement?.href || '';
 
-                // 提取视频 ID
                 let videoId = '';
                 let videoType = 'video';
                 if (url) {
@@ -207,11 +247,9 @@ export class YouTubeCDPProvider extends BaseProvider {
                   }
                 }
 
-                // 频道信息
                 const channelElement =
                   renderer.querySelector('#channel-name a') ||
                   renderer.querySelector('ytd-channel-name a');
-
                 const channelName = channelElement?.textContent?.trim() || '';
 
                 if (title && dateText && videoId) {
@@ -225,7 +263,50 @@ export class YouTubeCDPProvider extends BaseProvider {
                   });
                 }
               } catch (err) {
-                console.error('提取视频失败:', err.message);
+                console.error('提取视频失败(旧元素):', err.message);
+              }
+            });
+
+            // 方式2: 新元素 yt-lockup-view-model
+            const lockups = section.querySelectorAll('yt-lockup-view-model');
+            lockups.forEach((lockup) => {
+              try {
+                const titleLink = lockup.querySelector('a[href*="watch"]') || lockup.querySelector('a[href*="shorts"]');
+                const h3 = lockup.querySelector('h3');
+
+                const title = h3?.textContent?.trim() || '';
+                const url = titleLink?.href || '';
+
+                let videoId = '';
+                let videoType = 'video';
+                if (url) {
+                  const watchMatch = url.match(/[?&]v=([^&]+)/);
+                  if (watchMatch) {
+                    videoId = watchMatch[1];
+                  } else {
+                    const shortsMatch = url.match(/\\/shorts\\/([^?&\\/]+)/);
+                    if (shortsMatch) {
+                      videoId = shortsMatch[1];
+                      videoType = 'shorts';
+                    }
+                  }
+                }
+
+                const channelLink = lockup.querySelector('a[href*="channel"]') || lockup.querySelector('a[href*="@"]');
+                const channelName = channelLink?.textContent?.trim() || '';
+
+                if (title && dateText && videoId) {
+                  items.push({
+                    id: videoId,
+                    title: title,
+                    url: url,
+                    type: videoType,
+                    channelName: channelName,
+                    dateHeader: dateText,
+                  });
+                }
+              } catch (err) {
+                console.error('提取视频失败(新元素):', err.message);
               }
             });
           });
@@ -236,7 +317,21 @@ export class YouTubeCDPProvider extends BaseProvider {
       returnByValue: true,
     });
 
-    return result.result.value || [];
+    const items = result.result.value || [];
+
+    // 输出视频详情日志（只显示前 10 条）
+    logger.info(`[YouTube-CDP] 提取到 ${items.length} 条视频记录`);
+    const showCount = Math.min(items.length, 10);
+    for (let i = 0; i < showCount; i++) {
+      const item = items[i];
+      const titleShort = item.title.length > 30 ? item.title.substring(0, 30) + '...' : item.title;
+      logger.info(`[YouTube-CDP]   [${i + 1}] ${item.dateHeader} | ${item.id} | ${titleShort}`);
+    }
+    if (items.length > 10) {
+      logger.info(`[YouTube-CDP]   ... 还有 ${items.length - 10} 条`);
+    }
+
+    return items;
   }
 
   /**
@@ -409,6 +504,14 @@ export class YouTubeCDPProvider extends BaseProvider {
       // 等待页面渲染
       await sleep(5000);
       await this._waitForSelector(Runtime, 'ytd-video-renderer', 10000);
+
+      // 滚动到页面顶部，确保从最新记录开始（YouTube 会记忆上次滚动位置）
+      logger.info('[YouTube-CDP] 滚动到页面顶部...');
+      await Runtime.evaluate({
+        expression: 'window.scrollTo(0, 0)',
+      });
+      await sleep(1000);
+      logger.info('[YouTube-CDP] ✓ 已定位到页面顶部');
 
       // 滚动加载更多
       await this._scrollToLoadMore(Runtime);
