@@ -104,13 +104,26 @@ async function sendWecomMessage(content) {
 }
 
 /**
+ * 格式化同步间隔为可读字符串
+ * @param {number} minutes - 分钟数
+ * @returns {string}
+ */
+function formatInterval(minutes) {
+  if (minutes >= 60 && minutes % 60 === 0) {
+    return `${minutes / 60} 小时`;
+  }
+  return `${minutes} 分钟`;
+}
+
+/**
  * 发送服务器启动通知
  * @param {object} params - 参数
  * @param {number} params.port - 服务器端口
  * @param {string[]} params.enabledProviders - 已启用的平台列表
+ * @param {object} [params.syncIntervals] - 各平台同步间隔（分钟）
  * @returns {Promise<void>}
  */
-export async function notifyServerStart({ port, enabledProviders }) {
+export async function notifyServerStart({ port, enabledProviders, syncIntervals = {} }) {
   if (!isNotificationEnabled('serverStart')) {
     return;
   }
@@ -119,10 +132,19 @@ export async function notifyServerStart({ port, enabledProviders }) {
     ? enabledProviders.join(', ')
     : '无';
 
+  // 构建同步间隔信息
+  let intervalsText = '';
+  if (Object.keys(syncIntervals).length > 0) {
+    const intervalLines = Object.entries(syncIntervals)
+      .map(([provider, minutes]) => `>    - ${provider}: ${formatInterval(minutes)}`)
+      .join('\n');
+    intervalsText = `\n> **同步间隔**:\n${intervalLines}`;
+  }
+
   const content = `### 历史记录同步服务启动
 > **状态**: <font color="info">启动成功</font>
 > **端口**: ${port}
-> **已启用平台**: ${providersText}
+> **已启用平台**: ${providersText}${intervalsText}
 > **时间**: ${getCurrentTimeString()}`;
 
   await sendWecomMessage(content).catch(() => {});

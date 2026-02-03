@@ -421,7 +421,23 @@ const server = app.listen(config.server.port, () => {
 
   // 发送启动通知
   const enabledProviders = Object.keys(getEnabledProviders());
-  notifyServerStart({ port: config.server.port, enabledProviders });
+
+  // 收集各平台的同步间隔
+  const syncIntervals = {};
+  if (config.providers?.bilibili?.enabled) {
+    syncIntervals.bilibili = config.providers.bilibili.syncInterval || 60;
+  }
+  if (config.providers?.youtube?.enabled) {
+    syncIntervals.youtube = config.providers.youtube.syncInterval || 720;
+  }
+  if (config.providers?.['youtube-cdp']?.enabled) {
+    syncIntervals['youtube-cdp'] = config.providers['youtube-cdp'].syncInterval || 480;
+  }
+  if (config.providers?.xiaoyuzhou?.enabled) {
+    syncIntervals.xiaoyuzhou = config.providers.xiaoyuzhou.syncInterval || 60;
+  }
+
+  notifyServerStart({ port: config.server.port, enabledProviders, syncIntervals });
 });
 
 /**
