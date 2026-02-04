@@ -50,9 +50,8 @@
     },
     "xiaoyuzhou": {
       "enabled": false,
-      "accessToken": "your-access-token-here",
       "refreshToken": "your-refresh-token-here",
-      "deviceId": "your-device-id-here",
+      "deviceId": "optional-device-id",
       "syncInterval": 60,
       "pageSize": 25,
       "maxPages": 20

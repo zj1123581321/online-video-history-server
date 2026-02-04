@@ -2,7 +2,7 @@
  * 小宇宙播客历史记录提供者
  *
  * 使用小宇宙 API 获取播客播放历史记录
- * 需要配置 accessToken 和 refreshToken
+ * 只需配置 refreshToken，accessToken 会自动获取和刷新
  */
 
 import fetch from 'node-fetch';
@@ -16,6 +16,7 @@ import logger from '../utils/logger.js';
 const API_CONFIG = {
   baseUrl: 'https://api.xiaoyuzhoufm.com',
   historyEndpoint: '/v1/episode-played/list-history',
+  refreshEndpoint: '/app_auth_tokens.refresh',
   maxRetries: 3,
   retryDelay: 2000,
   requestInterval: 1000,
@@ -23,6 +24,8 @@ const API_CONFIG = {
 
 // 同步状态文件路径
 const SYNC_STATE_FILE = './data/xiaoyuzhou_sync_state.json';
+// Token 状态文件路径
+const TOKEN_STATE_FILE = './data/xiaoyuzhou_tokens.json';
 
 /**
  * 延时函数
@@ -73,6 +76,11 @@ export class XiaoyuzhouProvider extends BaseProvider {
     this.platform = 'xiaoyuzhou';
     this.pageSize = config?.pageSize || 25;
     this.maxPages = config?.maxPages || 20;
+    // 运行时 token 状态
+    this._accessToken = null;
+    this._refreshToken = null;
+    this._deviceId = null;
+    this._tokenInitialized = false;
   }
 
   /**
@@ -82,12 +90,145 @@ export class XiaoyuzhouProvider extends BaseProvider {
   validateConfig() {
     if (!this.enabled) return false;
 
-    if (!this.config.accessToken) {
-      logger.warn('[Xiaoyuzhou] accessToken 未配置');
+    // 只需要 refreshToken 或 accessToken 其中之一
+    if (!this.config.refreshToken && !this.config.accessToken) {
+      logger.warn('[Xiaoyuzhou] 需要配置 refreshToken 或 accessToken');
       return false;
     }
 
     return true;
+  }
+
+  /**
+   * 读取 Token 状态
+   * @returns {object} { accessToken, refreshToken, deviceId, updatedAt }
+   */
+  _readTokenState() {
+    try {
+      if (fs.existsSync(TOKEN_STATE_FILE)) {
+        const content = fs.readFileSync(TOKEN_STATE_FILE, 'utf-8');
+        return JSON.parse(content);
+      }
+    } catch (err) {
+      logger.warn(`[Xiaoyuzhou] 读取 Token 状态失败: ${err.message}`);
+    }
+    return {};
+  }
+
+  /**
+   * 保存 Token 状态
+   * @param {object} state - Token 状态
+   */
+  _saveTokenState(state) {
+    try {
+      const dir = path.dirname(TOKEN_STATE_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(TOKEN_STATE_FILE, JSON.stringify({
+        ...state,
+        updatedAt: new Date().toISOString(),
+      }, null, 2), 'utf-8');
+      logger.debug('[Xiaoyuzhou] Token 状态已保存');
+    } catch (err) {
+      logger.error(`[Xiaoyuzhou] 保存 Token 状态失败: ${err.message}`);
+    }
+  }
+
+  /**
+   * 初始化 Token
+   * 优先级: 状态文件 > 配置文件
+   */
+  async _initTokens() {
+    if (this._tokenInitialized) return;
+
+    // 读取状态文件中的 token
+    const savedState = this._readTokenState();
+
+    // 设备 ID: 配置 > 状态文件 > 自动生成
+    this._deviceId = this.config.deviceId || savedState.deviceId || this._generateDeviceId();
+
+    // refreshToken: 状态文件 > 配置（状态文件的更新，配置的是初始值）
+    this._refreshToken = savedState.refreshToken || this.config.refreshToken;
+
+    // accessToken: 状态文件 > 配置
+    this._accessToken = savedState.accessToken || this.config.accessToken || null;
+
+    // 如果没有 accessToken，尝试刷新获取
+    if (!this._accessToken && this._refreshToken) {
+      logger.info('[Xiaoyuzhou] 无 accessToken，尝试刷新获取...');
+      await this._refreshTokens();
+    }
+
+    // 保存设备 ID（如果是新生成的）
+    if (!savedState.deviceId && !this.config.deviceId) {
+      this._saveTokenState({
+        accessToken: this._accessToken,
+        refreshToken: this._refreshToken,
+        deviceId: this._deviceId,
+      });
+    }
+
+    this._tokenInitialized = true;
+  }
+
+  /**
+   * 刷新 Token
+   * @returns {Promise<boolean>} 是否刷新成功
+   */
+  async _refreshTokens() {
+    if (!this._refreshToken) {
+      logger.error('[Xiaoyuzhou] 无 refreshToken，无法刷新');
+      return false;
+    }
+
+    logger.info('[Xiaoyuzhou] 正在刷新 Token...');
+
+    try {
+      const url = `${API_CONFIG.baseUrl}${API_CONFIG.refreshEndpoint}`;
+      const response = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json;charset=utf-8',
+          'User-Agent': 'Xiaoyuzhou/2.102.2(android 36)',
+          'x-jike-device-id': this._deviceId,
+          'x-jike-refresh-token': this._refreshToken,
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        logger.error(`[Xiaoyuzhou] Token 刷新失败 (${response.status}): ${text}`);
+        return false;
+      }
+
+      const data = await response.json();
+
+      if (data['x-jike-access-token']) {
+        this._accessToken = data['x-jike-access-token'];
+        // refreshToken 也会轮换，必须保存新的
+        if (data['x-jike-refresh-token']) {
+          this._refreshToken = data['x-jike-refresh-token'];
+        }
+
+        // 保存到状态文件
+        this._saveTokenState({
+          accessToken: this._accessToken,
+          refreshToken: this._refreshToken,
+          deviceId: this._deviceId,
+        });
+
+        logger.info('[Xiaoyuzhou] Token 刷新成功');
+        return true;
+      }
+
+      logger.error('[Xiaoyuzhou] Token 刷新响应格式异常');
+      return false;
+    } catch (err) {
+      logger.error(`[Xiaoyuzhou] Token 刷新异常: ${err.message}`);
+      return false;
+    }
   }
 
   /**
@@ -127,10 +268,7 @@ export class XiaoyuzhouProvider extends BaseProvider {
    * @returns {object}
    */
   _buildHeaders() {
-    // 生成随机设备 ID（如果未配置）
-    const deviceId = this.config.deviceId || this._generateDeviceId();
-
-    const headers = {
+    return {
       'Content-Type': 'application/json;charset=utf-8',
       'User-Agent': 'Xiaoyuzhou/2.102.2(android 36)',
       'os': 'android',
@@ -140,15 +278,9 @@ export class XiaoyuzhouProvider extends BaseProvider {
       'applicationid': 'app.podcast.cosmos',
       'app-version': '2.102.2',
       'app-buildno': '1395',
-      'x-jike-device-id': deviceId,
-      'x-jike-access-token': this.config.accessToken,
+      'x-jike-device-id': this._deviceId,
+      'x-jike-access-token': this._accessToken,
     };
-
-    if (this.config.refreshToken) {
-      headers['x-jike-refresh-token'] = this.config.refreshToken;
-    }
-
-    return headers;
   }
 
   /**
@@ -170,9 +302,10 @@ export class XiaoyuzhouProvider extends BaseProvider {
   /**
    * 调用小宇宙 API 获取历史记录
    * @param {string|null} loadMoreKey - 分页游标
+   * @param {boolean} isRetry - 是否为重试请求
    * @returns {Promise<{data: object[], loadMoreKey: string|null}>}
    */
-  async _fetchHistory(loadMoreKey = null) {
+  async _fetchHistory(loadMoreKey = null, isRetry = false) {
     const url = `${API_CONFIG.baseUrl}${API_CONFIG.historyEndpoint}`;
     const body = {
       limit: this.pageSize,
@@ -189,9 +322,14 @@ export class XiaoyuzhouProvider extends BaseProvider {
     });
 
     if (!response.ok) {
-      // 检查是否是认证错误
-      if (response.status === 401 || response.status === 403) {
-        throw new Error('Xiaoyuzhou: 认证失败，请检查 accessToken 和 deviceId 是否有效');
+      // 检查是否是认证错误，尝试刷新 token 后重试
+      if ((response.status === 401 || response.status === 403) && !isRetry) {
+        logger.warn('[Xiaoyuzhou] 认证失败，尝试刷新 Token 后重试...');
+        const refreshed = await this._refreshTokens();
+        if (refreshed) {
+          return this._fetchHistory(loadMoreKey, true);
+        }
+        throw new Error('Xiaoyuzhou: Token 刷新失败，请检查 refreshToken 是否有效');
       }
       throw new Error(`Xiaoyuzhou: API 请求失败 (${response.status})`);
     }
@@ -252,7 +390,14 @@ export class XiaoyuzhouProvider extends BaseProvider {
    */
   async sync() {
     if (!this.validateConfig()) {
-      throw new Error('Xiaoyuzhou: 配置无效，请确保已配置 accessToken');
+      throw new Error('Xiaoyuzhou: 配置无效，请确保已配置 refreshToken');
+    }
+
+    // 初始化 Token
+    await this._initTokens();
+
+    if (!this._accessToken) {
+      throw new Error('Xiaoyuzhou: 无法获取有效的 accessToken');
     }
 
     // 读取同步状态
