@@ -33,11 +33,6 @@
     },
     "youtube": {
       "enabled": false,
-      "syncInterval": 720,
-      "firstSyncCount": 100
-    },
-    "youtube-cdp": {
-      "enabled": false,
       "syncInterval": 480,
       "timezoneOffset": 8,
       "cdp": {
@@ -65,9 +60,6 @@
     "platforms": {
       "bilibili": {
         "domain": ".bilibili.com"
-      },
-      "youtube": {
-        "domain": ".youtube.com"
       }
     }
   }

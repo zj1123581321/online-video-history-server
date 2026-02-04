@@ -1,6 +1,5 @@
 import { BilibiliProvider } from '../providers/bilibili.js';
 import { YouTubeProvider } from '../providers/youtube.js';
-import { YouTubeCDPProvider } from '../providers/youtube-cdp.js';
 import { XiaoyuzhouProvider } from '../providers/xiaoyuzhou.js';
 import logger from '../utils/logger.js';
 
@@ -8,7 +7,6 @@ import logger from '../utils/logger.js';
 const providerRegistry = {
   bilibili: BilibiliProvider,
   youtube: YouTubeProvider,
-  'youtube-cdp': YouTubeCDPProvider,
   xiaoyuzhou: XiaoyuzhouProvider,
 };
 

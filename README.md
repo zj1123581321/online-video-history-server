@@ -4,8 +4,7 @@
 
 目前支持的平台：
 - **Bilibili**（已实现）
-- **YouTube**（已实现，需配合 yt-dlp）
-- **YouTube-CDP**（实验性，基于 Chrome DevTools Protocol，支持精确时间解析）
+- **YouTube**（已实现，基于 Chrome DevTools Protocol，支持精确时间解析）
 - **小宇宙播客**（已实现，需配置 access token）
 
 本项目参考了 [bilibili-history-wxt](https://github.com/mundane799699/bilibili-history-wxt) 项目的部分实现。
@@ -40,7 +39,7 @@ bilibili-history-server/
 │   ├── providers/                    # 平台 Provider 模块
 │   │   ├── base.js                   # Provider 基类
 │   │   ├── bilibili.js               # Bilibili 实现
-│   │   ├── youtube.js                # YouTube 实现
+│   │   ├── youtube.js                # YouTube 实现（基于 CDP）
 │   │   └── xiaoyuzhou.js             # 小宇宙播客实现
 │   ├── services/
 │   │   ├── history.js                # 历史记录服务（Provider 调度）
@@ -87,14 +86,10 @@ bilibili-history-server/
 - **HTML5 / JavaScript (ES6+)**
 - **Tailwind CSS** - 样式框架（CDN 引入）
 
-### 其他依赖
-- **yt-dlp** - YouTube 历史记录获取（Docker 环境已内置）
-
 ## 系统要求
 
 - Node.js >= 14.0.0
 - npm >= 6.0.0
-- Python 3 和 pip（如需使用 YouTube，非 Docker 环境）
 
 ## 安装
 
@@ -128,12 +123,7 @@ cd bilibili-history-server
 npm install
 ```
 
-3. 安装 yt-dlp（如需使用 YouTube）
-```bash
-pip install yt-dlp
-```
-
-4. 配置
+3. 配置
 复制 `config-example.json` 为 `config.json` 并修改配置（详见[配置说明](#配置说明)）
 
 ## 配置说明
@@ -228,37 +218,12 @@ LOG_LEVEL=debug npm run dev
 
 #### YouTube
 
-```json
-{
-  "providers": {
-    "youtube": {
-      "enabled": true,
-      "syncInterval": 720,
-      "firstSyncCount": 100
-    }
-  }
-}
-```
-
-| 配置项 | 说明 |
-|--------|------|
-| `providers.youtube.enabled` | 是否启用 YouTube 同步 |
-| `providers.youtube.syncInterval` | 自动同步间隔（分钟），默认 720（12小时） |
-| `providers.youtube.firstSyncCount` | 首次同步获取的记录数，默认 100 条 |
-
-**注意**：
-- YouTube 必须使用 CookieCloud 获取 Cookie（不支持静态配置）
-- YouTube 同步会在每天 00:00 和 12:00（配置时区）自动触发
-- 删除远程记录功能暂未实现
-
-#### YouTube-CDP（实验性功能）
-
 使用 Chrome DevTools Protocol 连接到远程 Chrome 获取 YouTube 历史记录，支持精确的观看时间解析。
 
 ```json
 {
   "providers": {
-    "youtube-cdp": {
+    "youtube": {
       "enabled": true,
       "syncInterval": 480,
       "timezoneOffset": 8,
@@ -276,14 +241,14 @@ LOG_LEVEL=debug npm run dev
 
 | 配置项 | 说明 |
 |--------|------|
-| `providers.youtube-cdp.enabled` | 是否启用 YouTube-CDP 同步 |
-| `providers.youtube-cdp.syncInterval` | 自动同步间隔（分钟），默认 480（8小时） |
-| `providers.youtube-cdp.timezoneOffset` | 时区偏移（小时），用于日期解析，默认 8（UTC+8） |
-| `providers.youtube-cdp.cdp.host` | CDP 服务地址，默认 localhost |
-| `providers.youtube-cdp.cdp.port` | CDP 服务端口，默认 9222 |
-| `providers.youtube-cdp.cdp.maxScrolls` | 最大滚动次数，默认 15 |
-| `providers.youtube-cdp.cdp.scrollInterval` | 滚动间隔（毫秒），默认 3000 |
-| `providers.youtube-cdp.cdp.targetLoadCount` | 目标加载记录数，默认 50 |
+| `providers.youtube.enabled` | 是否启用 YouTube 同步 |
+| `providers.youtube.syncInterval` | 自动同步间隔（分钟），默认 480（8小时） |
+| `providers.youtube.timezoneOffset` | 时区偏移（小时），用于日期解析，默认 8（UTC+8） |
+| `providers.youtube.cdp.host` | CDP 服务地址，默认 localhost |
+| `providers.youtube.cdp.port` | CDP 服务端口，默认 9222 |
+| `providers.youtube.cdp.maxScrolls` | 最大滚动次数，默认 15 |
+| `providers.youtube.cdp.scrollInterval` | 滚动间隔（毫秒），默认 3000 |
+| `providers.youtube.cdp.targetLoadCount` | 目标加载记录数，默认 50 |
 
 **前置条件**：
 - 需要运行一个开启远程调试的 Chrome 实例
@@ -312,11 +277,9 @@ docker run -d -p 9222:9222 \
 
 **优势**：
 - 支持精确的观看时间解析（"Thursday"、"Jan 26"、"Dec 15, 2025" 等格式）
-- 不依赖 yt-dlp 和 Python 环境
 - 纯 Node.js 实现
 
 **注意**：
-- 这是实验性功能，建议先在测试环境验证
 - 需要占用额外的 Chrome 实例资源
 - 删除远程记录功能暂未实现
 
@@ -374,9 +337,6 @@ docker run -d -p 9222:9222 \
     "platforms": {
       "bilibili": {
         "domain": ".bilibili.com"
-      },
-      "youtube": {
-        "domain": ".youtube.com"
       }
     }
   }
@@ -390,13 +350,11 @@ docker run -d -p 9222:9222 \
 | `cookiecloud.uuid` | CookieCloud UUID |
 | `cookiecloud.password` | CookieCloud 解密密码 |
 | `cookiecloud.platforms.bilibili.domain` | Bilibili cookie 的域名，默认 `.bilibili.com` |
-| `cookiecloud.platforms.youtube.domain` | YouTube cookie 的域名，默认 `.youtube.com` |
 
 启用 CookieCloud 后：
 - 系统会自动从云端获取最新的 cookie
 - cookie 会缓存到本地 `data/cookie_cache.json`，根据过期时间自动刷新
 - Bilibili 支持自动刷新 cookie（认证失败时）
-- YouTube 必须启用 CookieCloud 才能使用
 
 ### 获取 Bilibili Cookie
 
@@ -410,14 +368,6 @@ docker run -d -p 9222:9222 \
 **方式二：使用 CookieCloud 自动同步（推荐）**
 
 如果你已经部署了 [CookieCloud](https://github.com/easychen/CookieCloud) 服务，可以配置自动同步 cookie（见上方[CookieCloud 配置](#cookiecloud-配置)）。
-
-### 获取 YouTube Cookie
-
-YouTube **必须**使用 CookieCloud 获取 cookie，不支持手动配置。
-
-1. 在浏览器中登录 YouTube
-2. 使用 [CookieCloud 浏览器扩展](https://github.com/easychen/CookieCloud) 上传 cookie
-3. 在服务器配置中启用 CookieCloud 并配置相关信息
 
 > **安全提示**：Cookie 包含敏感信息，请妥善保管，不要泄露或提交到公开仓库。
 
@@ -659,9 +609,9 @@ Linux/Mac 环境可参考 `build_and_export.bat` 手动构建。
 
 ### YouTube 同步失败
 
-1. 确认已安装 yt-dlp：`yt-dlp --version`
-2. 确认已启用并正确配置 CookieCloud
-3. 检查 YouTube Cookie 是否有效
+1. 确认 Chrome 已启动远程调试模式
+2. 确认 CDP 配置中的 host 和 port 正确
+3. 确认 Chrome 已登录 YouTube 账号
 4. 查看服务器日志获取详细错误信息
 
 ### CookieCloud 连接失败
@@ -689,4 +639,3 @@ Linux/Mac 环境可参考 `build_and_export.bat` 手动构建。
 
 - [bilibili-history-wxt](https://github.com/mundane799699/bilibili-history-wxt) - 参考项目
 - [CookieCloud](https://github.com/easychen/CookieCloud) - Cookie 同步方案
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube 历史记录获取

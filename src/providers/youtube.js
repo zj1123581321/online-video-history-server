@@ -1,20 +1,21 @@
 /**
  * YouTube 历史记录提供者
  *
- * 使用 yt-dlp 获取 YouTube 观看历史记录
- * Cookie 仅支持从 CookieCloud 获取
+ * 使用 Chrome DevTools Protocol 连接到远程 Chrome 获取 YouTube 观看历史记录
+ * 支持精确的观看时间解析
  */
 
-import { execSync } from 'child_process';
+import CDP from 'chrome-remote-interface';
 import fs from 'fs';
 import path from 'path';
 import { BaseProvider } from './base.js';
 import db from '../db/index.js';
-import { getCookieService } from '../services/cookie.js';
 import logger from '../utils/logger.js';
 
 // 同步状态文件路径
 const SYNC_STATE_FILE = './data/youtube_sync_state.json';
+// 旧版本 CDP 同步状态文件（用于迁移）
+const OLD_CDP_SYNC_STATE_FILE = './data/youtube_cdp_sync_state.json';
 
 // 预编译 SQL 语句
 const stmts = {
@@ -27,45 +28,74 @@ const stmts = {
 };
 
 /**
+ * 等待指定时间
+ */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
  * YouTube 历史记录提供者
  */
 export class YouTubeProvider extends BaseProvider {
   constructor(config) {
     super(config);
     this.platform = 'youtube';
-    this.firstSyncCount = config?.firstSyncCount || 100;
+    // 清理 host 配置，移除可能误配置的协议前缀
+    let host = config?.cdp?.host || 'localhost';
+    host = host.replace(/^https?:\/\//, '');
+    this.cdpHost = host;
+    this.cdpPort = config?.cdp?.port || 9222;
+    this.maxScrolls = config?.cdp?.maxScrolls || 15;
+    this.scrollInterval = config?.cdp?.scrollInterval || 3000;
+    this.targetLoadCount = config?.cdp?.targetLoadCount || 50;
+    this.timezoneOffset = config?.timezoneOffset || 8; // UTC+8
   }
 
   /**
    * 验证配置
-   * @returns {boolean}
    */
   validateConfig() {
-    if (!this.enabled) return false;
-
-    // YouTube 必须使用 CookieCloud
-    try {
-      const cookieService = getCookieService();
-      if (!cookieService.isCookieCloudEnabled()) {
-        logger.warn('[YouTube] 必须启用 CookieCloud 才能同步历史记录');
-        return false;
-      }
-      return true;
-    } catch {
-      logger.warn('[YouTube] CookieService 未初始化');
+    if (!this.enabled) {
+      logger.info('[YouTube] Provider 未启用');
       return false;
     }
+
+    // 检查 CDP 配置
+    if (!this.cdpHost || !this.cdpPort) {
+      logger.warn('[YouTube] CDP 配置不完整，需要 host 和 port');
+      return false;
+    }
+
+    logger.info(`[YouTube] 配置验证通过 (${this.cdpHost}:${this.cdpPort})`);
+    return true;
   }
 
   /**
    * 读取同步状态
+   * 支持从旧版 youtube_cdp_sync_state.json 迁移
    * @returns {object} { lastSyncTime: number }
    */
   _readSyncState() {
     try {
+      // 优先读取新文件
       if (fs.existsSync(SYNC_STATE_FILE)) {
         const content = fs.readFileSync(SYNC_STATE_FILE, 'utf-8');
         return JSON.parse(content);
+      }
+
+      // 尝试迁移旧的 CDP 状态文件
+      if (fs.existsSync(OLD_CDP_SYNC_STATE_FILE)) {
+        logger.info('[YouTube] 检测到旧版同步状态文件，正在迁移...');
+        const content = fs.readFileSync(OLD_CDP_SYNC_STATE_FILE, 'utf-8');
+        const state = JSON.parse(content);
+
+        // 保存到新文件
+        this._saveSyncState(state);
+
+        // 删除旧文件
+        fs.unlinkSync(OLD_CDP_SYNC_STATE_FILE);
+        logger.info('[YouTube] 同步状态文件迁移完成');
+
+        return state;
       }
     } catch (err) {
       logger.warn(`[YouTube] 读取同步状态失败: ${err.message}`);
@@ -90,74 +120,359 @@ export class YouTubeProvider extends BaseProvider {
   }
 
   /**
-   * 调用 yt-dlp 获取历史记录
-   * @param {string} cookieFile - cookie 文件路径
-   * @param {number|null} limit - 限制条数，null 表示不限制
-   * @returns {object[]} 视频条目列表
+   * 等待元素出现
    */
-  _fetchHistory(cookieFile, limit = null) {
-    const args = [
-      'yt-dlp',
-      '--cookies', cookieFile,
-      '--flat-playlist',
-      '--dump-single-json',
-      '--no-warnings',
-      '--sleep-interval', '2',
-    ];
+  async _waitForSelector(Runtime, selector, timeout = 30000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      const result = await Runtime.evaluate({
+        expression: `document.querySelector('${selector}') !== null`,
+      });
+      if (result.result.value) return true;
+      await sleep(500);
+    }
+    throw new Error(`等待元素超时: ${selector}`);
+  }
 
-    if (limit) {
-      args.push('--playlist-end', String(limit));
+  /**
+   * 等待新内容加载完成
+   * @param {object} Runtime - CDP Runtime
+   * @param {number} previousCount - 滚动前的视频数量
+   * @param {number} timeout - 超时时间（毫秒）
+   * @returns {Promise<number>} 当前视频数量
+   */
+  async _waitForNewContent(Runtime, previousCount, timeout = 10000) {
+    const startTime = Date.now();
+    const checkInterval = 500;
+
+    while (Date.now() - startTime < timeout) {
+      const countResult = await Runtime.evaluate({
+        expression: 'document.querySelectorAll("ytd-video-renderer").length',
+      });
+      const currentCount = countResult.result.value;
+
+      if (currentCount > previousCount) {
+        // 新内容已加载，再等待一小段时间确保渲染完成
+        await sleep(500);
+        return currentCount;
+      }
+
+      await sleep(checkInterval);
     }
 
-    args.push('https://www.youtube.com/feed/history');
+    // 超时，返回当前数量
+    const finalResult = await Runtime.evaluate({
+      expression: 'document.querySelectorAll("ytd-video-renderer").length',
+    });
+    return finalResult.result.value;
+  }
 
-    logger.info(`[YouTube] 执行命令: ${args.join(' ')}`);
+  /**
+   * 智能滚动加载更多历史记录
+   */
+  async _scrollToLoadMore(Runtime) {
+    logger.info(`[YouTube] 开始滚动加载历史记录 (目标 ${this.targetLoadCount} 条)...`);
 
-    try {
-      const output = execSync(args.join(' '), {
-        encoding: 'utf-8',
-        timeout: 300000, // 5分钟超时
-        maxBuffer: 50 * 1024 * 1024, // 50MB 缓冲区
+    let previousCount = 0;
+    let noNewContentCount = 0;
+
+    // 获取初始数量
+    const initialResult = await Runtime.evaluate({
+      expression: 'document.querySelectorAll("ytd-video-renderer").length',
+    });
+    previousCount = initialResult.result.value;
+    logger.info(`[YouTube] 初始视频数量: ${previousCount}`);
+
+    for (let i = 0; i < this.maxScrolls; i++) {
+      if (previousCount >= this.targetLoadCount) {
+        logger.info(`[YouTube] 已达到目标数量 (${previousCount})`);
+        break;
+      }
+
+      // 执行滚动（每次滚动当前文档高度的 30%，确保触发懒加载）
+      await Runtime.evaluate({
+        expression: 'window.scrollBy(0, document.documentElement.scrollHeight * 0.3)',
       });
 
-      const data = JSON.parse(output);
-      return data.entries || [];
-    } catch (err) {
-      if (err.status) {
-        logger.error(`[YouTube] yt-dlp 执行失败，退出码: ${err.status}`);
-        logger.error(`[YouTube] stderr: ${err.stderr}`);
+      // 等待新内容加载
+      const currentCount = await this._waitForNewContent(Runtime, previousCount, this.scrollInterval * 3);
+
+      logger.info(`[YouTube]   第 ${i + 1}/${this.maxScrolls} 次滚动 - ${previousCount} -> ${currentCount} 条`);
+
+      if (currentCount === previousCount) {
+        noNewContentCount++;
+        if (noNewContentCount >= 3) {
+          logger.info('[YouTube] 连续三次无新内容，停止滚动');
+          break;
+        }
+        // 无新内容时额外等待
+        await sleep(this.scrollInterval);
+      } else {
+        noNewContentCount = 0;
       }
-      throw new Error(`yt-dlp 执行失败: ${err.message}`);
+
+      previousCount = currentCount;
+    }
+
+    logger.info(`[YouTube] 滚动完成，共加载 ${previousCount} 条记录`);
+  }
+
+  /**
+   * 从页面提取视频和时间信息
+   * 支持新旧两种 YouTube 页面元素：
+   * - 旧元素: ytd-video-renderer
+   * - 新元素: yt-lockup-view-model
+   */
+  async _extractVideosWithTime(Runtime) {
+    // 提取视频详情（同时支持新旧两种元素）
+    const result = await Runtime.evaluate({
+      expression: `
+        (() => {
+          const items = [];
+          const sections = document.querySelectorAll('ytd-item-section-renderer');
+
+          sections.forEach((section) => {
+            // 提取日期标题
+            let dateText = '';
+            const headerRenderer = section.querySelector('ytd-item-section-header-renderer');
+            if (headerRenderer) {
+              const titleElement = headerRenderer.querySelector('#title');
+              dateText = titleElement?.textContent?.trim() || '';
+            }
+
+            // 方式1: 旧元素 ytd-video-renderer
+            const videoRenderers = section.querySelectorAll('ytd-video-renderer');
+            videoRenderers.forEach((renderer) => {
+              try {
+                const titleElement =
+                  renderer.querySelector('#video-title') ||
+                  renderer.querySelector('a#video-title-link');
+
+                const title = titleElement?.textContent?.trim() || '';
+                const url = titleElement?.href || '';
+
+                let videoId = '';
+                let videoType = 'video';
+                if (url) {
+                  const watchMatch = url.match(/[?&]v=([^&]+)/);
+                  if (watchMatch) {
+                    videoId = watchMatch[1];
+                  } else {
+                    const shortsMatch = url.match(/\\/shorts\\/([^?&\\/]+)/);
+                    if (shortsMatch) {
+                      videoId = shortsMatch[1];
+                      videoType = 'shorts';
+                    }
+                  }
+                }
+
+                const channelElement =
+                  renderer.querySelector('#channel-name a') ||
+                  renderer.querySelector('ytd-channel-name a');
+                const channelName = channelElement?.textContent?.trim() || '';
+
+                if (title && dateText && videoId) {
+                  items.push({
+                    id: videoId,
+                    title: title,
+                    url: url,
+                    type: videoType,
+                    channelName: channelName,
+                    dateHeader: dateText,
+                  });
+                }
+              } catch (err) {
+                console.error('提取视频失败(旧元素):', err.message);
+              }
+            });
+
+            // 方式2: 新元素 yt-lockup-view-model
+            const lockups = section.querySelectorAll('yt-lockup-view-model');
+            lockups.forEach((lockup) => {
+              try {
+                const titleLink = lockup.querySelector('a[href*="watch"]') || lockup.querySelector('a[href*="shorts"]');
+                const h3 = lockup.querySelector('h3');
+
+                const title = h3?.textContent?.trim() || '';
+                const url = titleLink?.href || '';
+
+                let videoId = '';
+                let videoType = 'video';
+                if (url) {
+                  const watchMatch = url.match(/[?&]v=([^&]+)/);
+                  if (watchMatch) {
+                    videoId = watchMatch[1];
+                  } else {
+                    const shortsMatch = url.match(/\\/shorts\\/([^?&\\/]+)/);
+                    if (shortsMatch) {
+                      videoId = shortsMatch[1];
+                      videoType = 'shorts';
+                    }
+                  }
+                }
+
+                const channelLink = lockup.querySelector('a[href*="channel"]') || lockup.querySelector('a[href*="@"]');
+                const channelName = channelLink?.textContent?.trim() || '';
+
+                if (title && dateText && videoId) {
+                  items.push({
+                    id: videoId,
+                    title: title,
+                    url: url,
+                    type: videoType,
+                    channelName: channelName,
+                    dateHeader: dateText,
+                  });
+                }
+              } catch (err) {
+                console.error('提取视频失败(新元素):', err.message);
+              }
+            });
+          });
+
+          return items;
+        })()
+      `,
+      returnByValue: true,
+    });
+
+    const items = result.result.value || [];
+
+    // 输出视频详情日志（只显示前 10 条）
+    logger.info(`[YouTube] 提取到 ${items.length} 条视频记录`);
+    const showCount = Math.min(items.length, 10);
+    for (let i = 0; i < showCount; i++) {
+      const item = items[i];
+      const titleShort = item.title.length > 30 ? item.title.substring(0, 30) + '...' : item.title;
+      logger.info(`[YouTube]   [${i + 1}] ${item.dateHeader} | ${item.id} | ${titleShort}`);
+    }
+    if (items.length > 10) {
+      logger.info(`[YouTube]   ... 还有 ${items.length - 10} 条`);
+    }
+
+    return items;
+  }
+
+  /**
+   * 解析日期字符串为时间戳
+   * 支持格式：
+   * - "Today", "Yesterday" 相对日期
+   * - "Thursday", "Friday" 等星期格式
+   * - "Jan 26", "Feb 11" 等月+日格式（默认当年）
+   * - "Dec 15, 2025", "Feb 11, 2025" 等完整日期格式
+   */
+  _parseDateString(dateStr) {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    const monthMap = {
+      'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3,
+      'May': 4, 'Jun': 5, 'Jul': 6, 'Aug': 7,
+      'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11,
+    };
+
+    const weekdayMap = {
+      'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4,
+      'Friday': 5, 'Saturday': 6, 'Sunday': 0,
+    };
+
+    try {
+      // 格式 0: "Today", "Yesterday" (相对日期)
+      // 注意：setHours(0,0,0,0) 设置本地时间 00:00:00，getTime() 已返回正确的 UTC 时间戳
+      const lowerDateStr = dateStr.trim().toLowerCase();
+      if (lowerDateStr === 'today') {
+        const today = new Date(now);
+        today.setHours(0, 0, 0, 0);
+        return Math.floor(today.getTime() / 1000);
+      }
+      if (lowerDateStr === 'yesterday') {
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        yesterday.setHours(0, 0, 0, 0);
+        return Math.floor(yesterday.getTime() / 1000);
+      }
+
+      // 格式 1: "Dec 15, 2025" (完整日期)
+      const fullDateMatch = dateStr.match(/^([A-Z][a-z]{2})\s+(\d{1,2}),\s+(\d{4})$/);
+      if (fullDateMatch) {
+        const [, month, day, year] = fullDateMatch;
+        const monthIndex = monthMap[month];
+        if (monthIndex !== undefined) {
+          const date = new Date(parseInt(year), monthIndex, parseInt(day), 0, 0, 0, 0);
+          return Math.floor(date.getTime() / 1000);
+        }
+      }
+
+      // 格式 2: "Jan 26" (月+日，默认当年)
+      const monthDayMatch = dateStr.match(/^([A-Z][a-z]{2})\s+(\d{1,2})$/);
+      if (monthDayMatch) {
+        const [, month, day] = monthDayMatch;
+        const monthIndex = monthMap[month];
+        if (monthIndex !== undefined) {
+          let year = currentYear;
+          const testDate = new Date(year, monthIndex, parseInt(day));
+          if (testDate > now) {
+            year -= 1;
+          }
+
+          const date = new Date(year, monthIndex, parseInt(day), 0, 0, 0, 0);
+          return Math.floor(date.getTime() / 1000);
+        }
+      }
+
+      // 格式 3: "Thursday" (星期，取最近的过去的这一天)
+      const weekdayName = dateStr.trim();
+      if (weekdayMap.hasOwnProperty(weekdayName)) {
+        const targetWeekday = weekdayMap[weekdayName];
+        const currentWeekday = now.getDay();
+
+        let daysAgo = currentWeekday - targetWeekday;
+        if (daysAgo <= 0) {
+          daysAgo += 7;
+        }
+
+        const targetDate = new Date(now);
+        targetDate.setDate(now.getDate() - daysAgo);
+        targetDate.setHours(0, 0, 0, 0);
+
+        return Math.floor(targetDate.getTime() / 1000);
+      }
+
+      logger.warn(`[YouTube] 无法解析日期: "${dateStr}"`);
+      return Math.floor(Date.now() / 1000);
+
+    } catch (err) {
+      logger.error(`[YouTube] 解析日期失败: "${dateStr}" - ${err.message}`);
+      return Math.floor(Date.now() / 1000);
     }
   }
 
   /**
-   * 标准化数据格式
-   * @param {object} entry - yt-dlp 返回的视频条目
-   * @param {number} viewTime - 观看时间戳
-   * @returns {object}
+   * 获取 YouTube 缩略图 URL
    */
-  normalizeItem(entry, viewTime) {
-    // 获取最大尺寸的缩略图
-    let cover = '';
-    if (entry.thumbnails && entry.thumbnails.length > 0) {
-      // 按尺寸排序，取最大的
-      const sortedThumbs = [...entry.thumbnails].sort((a, b) => (b.width || 0) - (a.width || 0));
-      cover = sortedThumbs[0].url || '';
-    }
+  _getThumbnailUrl(videoId, quality = 'hqdefault') {
+    return videoId ? `https://i.ytimg.com/vi/${videoId}/${quality}.jpg` : '';
+  }
+
+  /**
+   * 标准化数据格式
+   */
+  normalizeItem(item) {
+    const viewTime = this._parseDateString(item.dateHeader);
+    const thumbnail = this._getThumbnailUrl(item.id);
 
     return {
-      id: entry.id,
+      id: item.id,
       platform: this.platform,
       business: 'video',
-      bvid: entry.id,
+      bvid: item.id,
       cid: 0,
-      title: entry.title || '',
-      tag_name: '',
-      cover: cover,
+      title: item.title,
+      tag_name: item.type === 'shorts' ? 'shorts' : '',
+      cover: thumbnail,
       viewTime: viewTime,
-      uri: entry.url || `https://www.youtube.com/watch?v=${entry.id}`,
-      author_name: '',
+      uri: item.url,
+      author_name: item.channelName,
       author_mid: 0,
       timestamp: Date.now(),
     };
@@ -165,20 +480,17 @@ export class YouTubeProvider extends BaseProvider {
 
   /**
    * 同步历史记录
-   * @returns {Promise<{newCount: number, updateCount: number}>}
    */
   async sync() {
     if (!this.validateConfig()) {
-      throw new Error('YouTube: 配置无效，请确保已启用 CookieCloud');
+      throw new Error('YouTube: 配置无效');
     }
 
-    const cookieService = getCookieService();
-    let cookieFile = null;
+    let client = null;
 
     try {
-      // 获取 cookie 文件
-      cookieFile = await cookieService.getCookieNetscapeFile('youtube');
-      logger.info('[YouTube] Cookie 文件已准备');
+      logger.info(`[YouTube] 开始同步历史记录`);
+      logger.info(`[YouTube] CDP 服务: ${this.cdpHost}:${this.cdpPort}`);
 
       // 读取同步状态
       const syncState = this._readSyncState();
@@ -187,24 +499,74 @@ export class YouTubeProvider extends BaseProvider {
 
       logger.info(`[YouTube] ${isFirstSync ? '首次同步' : '增量同步'}，上次同步时间: ${lastSyncTime ? new Date(lastSyncTime * 1000).toISOString() : '无'}`);
 
-      // 获取历史记录
-      const limit = isFirstSync ? this.firstSyncCount : null;
-      const entries = this._fetchHistory(cookieFile, limit);
+      // 连接到远程 Chrome
+      logger.info('[YouTube] 正在连接到远程 Chrome...');
+      client = await CDP({
+        host: this.cdpHost,
+        port: this.cdpPort,
+      });
+      logger.info('[YouTube] 已连接');
 
-      logger.info(`[YouTube] 获取到 ${entries.length} 条记录`);
+      const { Network, Page, Runtime } = client;
+      await Promise.all([Network.enable(), Page.enable(), Runtime.enable()]);
 
-      if (entries.length === 0) {
+      // 导航到 YouTube 历史记录页面
+      logger.info('[YouTube] 正在导航到 YouTube 历史记录页面...');
+      await Page.navigate({ url: 'https://www.youtube.com/feed/history' });
+      await Page.loadEventFired();
+      logger.info('[YouTube] 页面加载完成');
+
+      // 等待页面渲染
+      await sleep(5000);
+      await this._waitForSelector(Runtime, 'ytd-video-renderer', 10000);
+
+      // 滚动到页面顶部，确保从最新记录开始（YouTube 会记忆上次滚动位置）
+      logger.info('[YouTube] 滚动到页面顶部...');
+      await Runtime.evaluate({
+        expression: 'window.scrollTo(0, 0)',
+      });
+      await sleep(1000);
+      logger.info('[YouTube] 已定位到页面顶部');
+
+      // 滚动加载更多
+      await this._scrollToLoadMore(Runtime);
+
+      // 提取数据
+      logger.info('[YouTube] 提取视频和时间信息...');
+      const rawItems = await this._extractVideosWithTime(Runtime);
+      logger.info(`[YouTube] 提取到 ${rawItems.length} 条原始记录`);
+
+      if (rawItems.length === 0) {
         return { newCount: 0, updateCount: 0 };
       }
 
-      // 当前时间作为 view_time
-      const currentTime = Math.floor(Date.now() / 1000);
+      // 标准化数据
+      const items = rawItems.map(item => this.normalizeItem(item));
+
+      // 插入数据库（支持增量同步）
       let newCount = 0;
       let skippedCount = 0;
+      let stopped = false;
 
-      // 使用事务批量处理
+      // 获取当前同步时间（使用第一条记录的时间，如果没有则使用当前时间）
+      const currentSyncTime = items.length > 0 ? items[0].viewTime : Math.floor(Date.now() / 1000);
+
       const batchInsert = db.transaction((items) => {
         for (const item of items) {
+          const existing = stmts.getById.get(item.id, this.platform);
+
+          if (existing) {
+            // 增量同步优化：如果遇到上次同步的记录，停止插入
+            if (!isFirstSync && existing.view_time >= lastSyncTime) {
+              logger.info(`[YouTube] 遇到上次同步的记录 (${item.id})，停止同步`);
+              stopped = true;
+              break;
+            }
+            // 存在但是更早的记录（重复观看），跳过
+            skippedCount++;
+            continue;
+          }
+
           stmts.insert.run(
             item.id,
             item.platform,
@@ -220,62 +582,36 @@ export class YouTubeProvider extends BaseProvider {
             item.author_mid,
             item.timestamp
           );
+          newCount++;
         }
       });
 
-      const newItems = [];
-
-      for (const entry of entries) {
-        if (!entry.id) {
-          continue;
-        }
-
-        // 检查是否已存在
-        const existing = stmts.getById.get(entry.id, this.platform);
-
-        if (existing) {
-          // 如果存在且 view_time >= lastSyncTime，说明遇到了上次同步的记录
-          if (!isFirstSync && existing.view_time >= lastSyncTime) {
-            logger.info(`[YouTube] 遇到上次同步的记录 (${entry.id})，停止同步`);
-            break;
-          }
-          // 存在但是更早的记录（重复观看），跳过
-          skippedCount++;
-          continue;
-        }
-
-        // 新记录
-        const item = this.normalizeItem(entry, currentTime);
-        newItems.push(item);
-      }
-
-      // 批量插入
-      if (newItems.length > 0) {
-        batchInsert(newItems);
-        newCount = newItems.length;
-      }
+      batchInsert(items);
 
       // 保存同步状态
       this._saveSyncState({
-        lastSyncTime: currentTime,
+        lastSyncTime: currentSyncTime,
         lastSyncAt: new Date().toISOString(),
       });
 
-      logger.info(`[YouTube] 同步完成: 新增 ${newCount} 条，跳过 ${skippedCount} 条重复`);
+      const statusMsg = stopped ? '(提前终止)' : '';
+      logger.info(`[YouTube] 同步完成${statusMsg}: 新增 ${newCount} 条，跳过 ${skippedCount} 条重复`);
 
       return { newCount, updateCount: 0 };
+
+    } catch (err) {
+      logger.error('[YouTube] 同步失败: ' + err.message, err);
+      throw err;
     } finally {
-      // 清理临时 cookie 文件
-      if (cookieFile) {
-        cookieService.removeCookieFile(cookieFile);
+      if (client) {
+        await client.close();
+        logger.info('[YouTube] 已断开 CDP 连接');
       }
     }
   }
 
   /**
    * 删除远程历史记录（暂不实现）
-   * @param {object} item - 历史记录项
-   * @returns {Promise<boolean>}
    */
   async deleteRemote(item) {
     logger.info('[YouTube] 删除远程记录功能暂未实现');

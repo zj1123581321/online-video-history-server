@@ -78,135 +78,32 @@ function startBilibiliAutoSync() {
 }
 startBilibiliAutoSync();
 
-// YouTube 自动同步定时器
+// YouTube 自动同步定时器（基于 CDP）
 let youtubeSyncTimer = null;
-let youtubeNextSyncTimeout = null;
-
-/**
- * 获取指定时区的当前时间
- * @param {number} timezoneOffset - 时区偏移（小时），如 8 表示 UTC+8
- * @returns {Date} 调整后的时间
- */
-function getTimeInTimezone(timezoneOffset = 8) {
-  const now = new Date();
-  // 获取 UTC 时间，然后加上时区偏移
-  const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
-  return new Date(utcTime + timezoneOffset * 3600000);
-}
-
-/**
- * 计算下一个 YouTube 同步时间点
- * @returns {{nextTime: Date, delay: number}}
- */
-function getNextYouTubeSyncTime() {
-  // 获取配置的时区，默认北京时间 (UTC+8)
-  const timezoneOffset = config.server?.timezone ?? 8;
-  const tzNow = getTimeInTimezone(timezoneOffset);
-  const hours = tzNow.getHours();
-
-  // 计算目标时间点（在配置时区中的 00:00 或 12:00）
-  let targetHour;
-  let daysToAdd = 0;
-
-  if (hours < 12) {
-    targetHour = 12;
-  } else {
-    targetHour = 0;
-    daysToAdd = 1;
-  }
-
-  // 构建目标时间（在配置时区）
-  const targetInTz = new Date(
-    tzNow.getFullYear(),
-    tzNow.getMonth(),
-    tzNow.getDate() + daysToAdd,
-    targetHour, 0, 0
-  );
-
-  // 转换回本地时间进行延迟计算
-  const now = new Date();
-  const targetUtc = targetInTz.getTime() - timezoneOffset * 3600000;
-  const targetLocal = new Date(targetUtc - now.getTimezoneOffset() * 60000);
-
-  const delay = targetLocal.getTime() - now.getTime();
-
-  // 用于日志显示的时间字符串
-  const displayTime = `${targetInTz.getFullYear()}-${String(targetInTz.getMonth() + 1).padStart(2, '0')}-${String(targetInTz.getDate()).padStart(2, '0')} ${String(targetInTz.getHours()).padStart(2, '0')}:00 (UTC+${timezoneOffset})`;
-
-  return { nextTime: targetLocal, delay, displayTime };
-}
-
-/**
- * 执行 YouTube 同步
- */
-async function doYouTubeSync() {
-  try {
-    logger.info('[YouTube] 开始自动同步...');
-    const result = await syncHistory('youtube');
-    logger.info(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
-    notifySyncSuccess({ platform: 'youtube', newCount: result.totalNew, updateCount: result.totalUpdate });
-  } catch (e) {
-    logger.error('[YouTube] 自动同步失败: ' + e.message, e);
-    notifySyncError({ platform: 'youtube', error: e.message, syncType: '自动同步' });
-  }
-}
-
-/**
- * 启动 YouTube 自动同步
- */
 function startYouTubeAutoSync() {
-  // 清理现有定时器
   if (youtubeSyncTimer) clearNodeInterval(youtubeSyncTimer);
-  if (youtubeNextSyncTimeout) clearTimeout(youtubeNextSyncTimeout);
 
-  // 检查 YouTube 是否启用
-  if (!config.providers?.youtube?.enabled) {
+  // 检查 YouTube 是否启用（支持旧的 youtube-cdp 配置名进行兼容）
+  const youtubeConfig = config.providers?.youtube || config.providers?.['youtube-cdp'];
+  if (!youtubeConfig?.enabled) {
     logger.info('[YouTube] 未启用，跳过自动同步');
     return;
   }
 
-  const interval = (config.providers.youtube.syncInterval || 720) * 60000; // 默认 12 小时
-  const { delay, displayTime } = getNextYouTubeSyncTime();
-
-  logger.info(`[YouTube] 下一次同步时间: ${displayTime}，等待 ${Math.round(delay / 60000)} 分钟`);
-
-  // 先设置一个 timeout 到下一个定时点
-  youtubeNextSyncTimeout = setTimeout(() => {
-    // 执行第一次同步
-    doYouTubeSync();
-
-    // 然后启动固定间隔的定时器
-    youtubeSyncTimer = setNodeInterval(doYouTubeSync, interval);
-    logger.info(`[YouTube] 定时同步已启动，间隔: ${interval / 60000} 分钟`);
-  }, delay);
-}
-startYouTubeAutoSync();
-
-// YouTube-CDP 自动同步定时器
-let youtubeCdpSyncTimer = null;
-function startYouTubeCdpAutoSync() {
-  if (youtubeCdpSyncTimer) clearNodeInterval(youtubeCdpSyncTimer);
-
-  // 检查 YouTube-CDP 是否启用
-  if (!config.providers?.['youtube-cdp']?.enabled) {
-    logger.info('[YouTube-CDP] 未启用，跳过自动同步');
-    return;
-  }
-
-  const interval = (config.providers['youtube-cdp'].syncInterval || 480) * 60000; // 默认 8 小时
-  youtubeCdpSyncTimer = setNodeInterval(async () => {
+  const interval = (youtubeConfig.syncInterval || 480) * 60000; // 默认 8 小时
+  youtubeSyncTimer = setNodeInterval(async () => {
     try {
-      const result = await syncHistory('youtube-cdp');
-      logger.info(`[YouTube-CDP] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
-      notifySyncSuccess({ platform: 'youtube-cdp', newCount: result.totalNew, updateCount: result.totalUpdate });
+      const result = await syncHistory('youtube');
+      logger.info(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+      notifySyncSuccess({ platform: 'youtube', newCount: result.totalNew, updateCount: result.totalUpdate });
     } catch (e) {
-      logger.error('[YouTube-CDP] 自动同步失败: ' + e.message, e);
-      notifySyncError({ platform: 'youtube-cdp', error: e.message, syncType: '自动同步' });
+      logger.error('[YouTube] 自动同步失败: ' + e.message, e);
+      notifySyncError({ platform: 'youtube', error: e.message, syncType: '自动同步' });
     }
   }, interval);
-  logger.info(`[YouTube-CDP] 自动同步定时器已启动，间隔: ${interval / 60000} 分钟`);
+  logger.info(`[YouTube] 自动同步定时器已启动，间隔: ${interval / 60000} 分钟`);
 }
-startYouTubeCdpAutoSync();
+startYouTubeAutoSync();
 
 // 小宇宙自动同步定时器
 let xiaoyuzhouSyncTimer = null;
@@ -427,11 +324,10 @@ const server = app.listen(config.server.port, () => {
   if (config.providers?.bilibili?.enabled) {
     syncIntervals.bilibili = config.providers.bilibili.syncInterval || 60;
   }
-  if (config.providers?.youtube?.enabled) {
-    syncIntervals.youtube = config.providers.youtube.syncInterval || 720;
-  }
-  if (config.providers?.['youtube-cdp']?.enabled) {
-    syncIntervals['youtube-cdp'] = config.providers['youtube-cdp'].syncInterval || 480;
+  // 支持旧的 youtube-cdp 配置名进行兼容
+  const youtubeConfig = config.providers?.youtube || config.providers?.['youtube-cdp'];
+  if (youtubeConfig?.enabled) {
+    syncIntervals.youtube = youtubeConfig.syncInterval || 480;
   }
   if (config.providers?.xiaoyuzhou?.enabled) {
     syncIntervals.xiaoyuzhou = config.providers.xiaoyuzhou.syncInterval || 60;
@@ -460,16 +356,6 @@ async function gracefulShutdown(signal) {
     clearNodeInterval(youtubeSyncTimer);
     youtubeSyncTimer = null;
     logger.info('[YouTube] 自动同步定时器已停止');
-  }
-  if (youtubeNextSyncTimeout) {
-    clearTimeout(youtubeNextSyncTimeout);
-    youtubeNextSyncTimeout = null;
-    logger.info('[YouTube] 下次同步延时已取消');
-  }
-  if (youtubeCdpSyncTimer) {
-    clearNodeInterval(youtubeCdpSyncTimer);
-    youtubeCdpSyncTimer = null;
-    logger.info('[YouTube-CDP] 自动同步定时器已停止');
   }
   if (xiaoyuzhouSyncTimer) {
     clearNodeInterval(xiaoyuzhouSyncTimer);
