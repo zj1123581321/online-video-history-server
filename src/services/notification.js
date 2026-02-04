@@ -174,7 +174,7 @@ export async function notifyServerStop({ signal }) {
  * @param {object} params - 参数
  * @param {string} params.platform - 平台名称
  * @param {number} params.newCount - 新增记录数
- * @param {number} params.updateCount - 更新记录数
+ * @param {number} params.updateCount - 更新记录数（保留参数以保持接口兼容，但不显示）
  * @returns {Promise<void>}
  */
 export async function notifySyncSuccess({ platform, newCount, updateCount }) {
@@ -190,7 +190,6 @@ export async function notifySyncSuccess({ platform, newCount, updateCount }) {
   const content = `### 同步完成通知
 > **平台**: <font color="info">${platform}</font>
 > **新增**: ${newCount} 条
-> **更新**: ${updateCount} 条
 > **时间**: ${getCurrentTimeString()}`;
 
   await sendWecomMessage(content).catch(() => {});
