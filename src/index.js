@@ -67,8 +67,15 @@ function startBilibiliAutoSync() {
   bilibiliSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('bilibili');
-      logger.info(`[Bilibili] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
-      notifySyncSuccess({ platform: 'bilibili', newCount: result.totalNew, updateCount: result.totalUpdate });
+      // 检查返回结果中是否有 provider 级别的错误
+      if (result.errors && Object.keys(result.errors).length > 0) {
+        const errorMsg = Object.values(result.errors).join('; ');
+        logger.error(`[Bilibili] 自动同步失败: ${errorMsg}`);
+        notifySyncError({ platform: 'bilibili', error: errorMsg, syncType: '自动同步' });
+      } else {
+        logger.info(`[Bilibili] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+        notifySyncSuccess({ platform: 'bilibili', newCount: result.totalNew, updateCount: result.totalUpdate });
+      }
     } catch (e) {
       logger.error('[Bilibili] 自动同步失败: ' + e.message, e);
       notifySyncError({ platform: 'bilibili', error: e.message, syncType: '自动同步' });
@@ -94,8 +101,14 @@ function startYouTubeAutoSync() {
   youtubeSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('youtube');
-      logger.info(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
-      notifySyncSuccess({ platform: 'youtube', newCount: result.totalNew, updateCount: result.totalUpdate });
+      if (result.errors && Object.keys(result.errors).length > 0) {
+        const errorMsg = Object.values(result.errors).join('; ');
+        logger.error(`[YouTube] 自动同步失败: ${errorMsg}`);
+        notifySyncError({ platform: 'youtube', error: errorMsg, syncType: '自动同步' });
+      } else {
+        logger.info(`[YouTube] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+        notifySyncSuccess({ platform: 'youtube', newCount: result.totalNew, updateCount: result.totalUpdate });
+      }
     } catch (e) {
       logger.error('[YouTube] 自动同步失败: ' + e.message, e);
       notifySyncError({ platform: 'youtube', error: e.message, syncType: '自动同步' });
@@ -120,8 +133,14 @@ function startXiaoyuzhouAutoSync() {
   xiaoyuzhouSyncTimer = setNodeInterval(async () => {
     try {
       const result = await syncHistory('xiaoyuzhou');
-      logger.info(`[Xiaoyuzhou] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
-      notifySyncSuccess({ platform: 'xiaoyuzhou', newCount: result.totalNew, updateCount: result.totalUpdate });
+      if (result.errors && Object.keys(result.errors).length > 0) {
+        const errorMsg = Object.values(result.errors).join('; ');
+        logger.error(`[Xiaoyuzhou] 自动同步失败: ${errorMsg}`);
+        notifySyncError({ platform: 'xiaoyuzhou', error: errorMsg, syncType: '自动同步' });
+      } else {
+        logger.info(`[Xiaoyuzhou] 自动同步成功: 新增 ${result.totalNew}, 更新 ${result.totalUpdate}`);
+        notifySyncSuccess({ platform: 'xiaoyuzhou', newCount: result.totalNew, updateCount: result.totalUpdate });
+      }
     } catch (e) {
       logger.error('[Xiaoyuzhou] 自动同步失败: ' + e.message, e);
       notifySyncError({ platform: 'xiaoyuzhou', error: e.message, syncType: '自动同步' });
@@ -226,6 +245,12 @@ app.post('/api/history/sync', async (req, res) => {
   try {
     const { platform } = req.body || {};
     const result = await syncHistory(platform || null);
+    // 检查是否有 provider 级别的错误
+    if (result.errors && Object.keys(result.errors).length > 0) {
+      const platformName = platform || '所有平台';
+      const errorMsg = Object.values(result.errors).join('; ');
+      notifySyncError({ platform: platformName, error: errorMsg, syncType: '手动同步' });
+    }
     res.json({
       success: true,
       message: `同步成功，新增 ${result.totalNew} 条记录，更新 ${result.totalUpdate} 条记录`,

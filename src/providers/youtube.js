@@ -135,6 +135,38 @@ export class YouTubeProvider extends BaseProvider {
   }
 
   /**
+   * 等待任意一个选择器出现
+   * @param {object} Runtime - CDP Runtime
+   * @param {string[]} selectors - CSS 选择器数组
+   * @param {number} timeout - 超时时间（毫秒）
+   * @returns {Promise<string>} 匹配到的选择器
+   */
+  async _waitForAnySelector(Runtime, selectors, timeout = 30000) {
+    const selectorExpr = selectors.map(s => `document.querySelector('${s}') !== null`).join(' || ');
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      const result = await Runtime.evaluate({
+        expression: `(${selectorExpr})`,
+      });
+      if (result.result.value) {
+        // 找出匹配的选择器用于日志
+        for (const s of selectors) {
+          const check = await Runtime.evaluate({
+            expression: `document.querySelector('${s}') !== null`,
+          });
+          if (check.result.value) {
+            logger.info(`[YouTube] 检测到页面元素: ${s}`);
+            return s;
+          }
+        }
+        return selectors[0];
+      }
+      await sleep(500);
+    }
+    throw new Error(`等待元素超时: ${selectors.join(' / ')}`);
+  }
+
+  /**
    * 等待新内容加载完成
    * @param {object} Runtime - CDP Runtime
    * @param {number} previousCount - 滚动前的视频数量
@@ -144,10 +176,12 @@ export class YouTubeProvider extends BaseProvider {
   async _waitForNewContent(Runtime, previousCount, timeout = 10000) {
     const startTime = Date.now();
     const checkInterval = 500;
+    // 同时统计新旧两种元素数量
+    const countExpression = 'document.querySelectorAll("ytd-video-renderer, yt-lockup-view-model").length';
 
     while (Date.now() - startTime < timeout) {
       const countResult = await Runtime.evaluate({
-        expression: 'document.querySelectorAll("ytd-video-renderer").length',
+        expression: countExpression,
       });
       const currentCount = countResult.result.value;
 
@@ -162,7 +196,7 @@ export class YouTubeProvider extends BaseProvider {
 
     // 超时，返回当前数量
     const finalResult = await Runtime.evaluate({
-      expression: 'document.querySelectorAll("ytd-video-renderer").length',
+      expression: countExpression,
     });
     return finalResult.result.value;
   }
@@ -176,9 +210,9 @@ export class YouTubeProvider extends BaseProvider {
     let previousCount = 0;
     let noNewContentCount = 0;
 
-    // 获取初始数量
+    // 获取初始数量（同时统计新旧两种元素）
     const initialResult = await Runtime.evaluate({
-      expression: 'document.querySelectorAll("ytd-video-renderer").length',
+      expression: 'document.querySelectorAll("ytd-video-renderer, yt-lockup-view-model").length',
     });
     previousCount = initialResult.result.value;
     logger.info(`[YouTube] 初始视频数量: ${previousCount}`);
@@ -311,8 +345,13 @@ export class YouTubeProvider extends BaseProvider {
                   }
                 }
 
+                // 新元素中频道名在 metadata 的第一个 span 文本中
                 const channelLink = lockup.querySelector('a[href*="channel"]') || lockup.querySelector('a[href*="@"]');
-                const channelName = channelLink?.textContent?.trim() || '';
+                let channelName = channelLink?.textContent?.trim() || '';
+                if (!channelName) {
+                  const metaSpan = lockup.querySelector('yt-content-metadata-view-model .yt-content-metadata-view-model__metadata-text');
+                  channelName = metaSpan?.textContent?.trim() || '';
+                }
 
                 if (title && dateText && videoId) {
                   items.push({
@@ -516,9 +555,9 @@ export class YouTubeProvider extends BaseProvider {
       await Page.loadEventFired();
       logger.info('[YouTube] 页面加载完成');
 
-      // 等待页面渲染
+      // 等待页面渲染（同时支持新旧两种 YouTube 元素）
       await sleep(5000);
-      await this._waitForSelector(Runtime, 'ytd-video-renderer', 10000);
+      await this._waitForAnySelector(Runtime, ['ytd-video-renderer', 'yt-lockup-view-model'], 15000);
 
       // 滚动到页面顶部，确保从最新记录开始（YouTube 会记忆上次滚动位置）
       logger.info('[YouTube] 滚动到页面顶部...');

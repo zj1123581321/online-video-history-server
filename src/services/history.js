@@ -111,7 +111,15 @@ export async function syncHistory(platform = null) {
     }
   }
 
-  return { results, totalNew, totalUpdate };
+  // 收集失败的 provider 信息
+  const errors = {};
+  for (const [name, result] of Object.entries(results)) {
+    if (result.error) {
+      errors[name] = result.error;
+    }
+  }
+
+  return { results, totalNew, totalUpdate, errors };
 }
 
 /**
